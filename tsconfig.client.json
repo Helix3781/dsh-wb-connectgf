@@ -33,6 +33,7 @@
     "tests/open-link.spec.ts",
     "tests/model-select.spec.ts",
     "tests/segmented.spec.ts",
-    "tests/panel-view.spec.ts"
+    "tests/panel-view.spec.ts",
+    "tests/status-cache-guard.spec.ts"
   ]
 }

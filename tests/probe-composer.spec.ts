@@ -379,4 +379,26 @@ describe('Composer model probe', () => {
     await mount()
     expect(buttonLabels()).not.toContain(en.probeNoteDismiss)
   })
+
+  /**
+   * A recorded result whose `efforts` is missing must not crash the control.
+   *
+   * The status route's host half always writes an array, but the browser keeps
+   * no such guarantee: the document is trusted by its discriminator alone, so a
+   * row from an older build (or from a partially-written cache) can arrive
+   * without the field. Reading `.length` off it throws inside the composer's
+   * render and takes the whole `conversation.input.right` slot down, which is
+   * exactly the reported failure — so the guard is asserted here rather than
+   * left to the type, which claims the field cannot be absent.
+   */
+  it('renders a result with no efforts array instead of throwing', async () => {
+    probeStatus({
+      candidates: [],
+      results: [{ id: 'glm-5.2', name: 'GLM-5.2', validation: 'validating', probedAt: Date.now() }],
+    })
+    // Reaching this line at all is the assertion: the render used to
+    // dereference `efforts.length` while composing the tooltip and threw.
+    await mount()
+    expect(button()).toHaveLength(1)
+  })
 })

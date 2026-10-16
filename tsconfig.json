@@ -34,6 +34,7 @@
     "tests/credit-badge.spec.ts",
     "tests/settings-page.spec.ts",
     "tests/segmented.spec.ts",
-    "tests/panel-view.spec.ts"
+    "tests/panel-view.spec.ts",
+    "tests/status-cache-guard.spec.ts"
   ]
 }

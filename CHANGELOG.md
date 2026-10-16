@@ -2,6 +2,20 @@
 
 版本号即 git tag，遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.13.12] — 2026-10-16
+
+- **修复「Cannot read properties of undefined (reading 'length')」** —— 这个报错在本插件里有两个互不相干的成因，本版一起处理。
+
+  **一、pi-ai 版本漂移（致命：所有 WorkBuddy 请求全部失败）**。上游 issue #69 / #77 / #82 / #92 是同一件事：`dsh-llm-pi-ai@0.2.0-rc.2` 依赖 `^0.87.1`，而本插件此前**只声明 peer、自己没有依赖**，profile 又是 `autoInstallPeers: false`，于是插件实际解析到的 pi-ai 由 profile 根目录谁先装谁说了算。宿主 0.87 会把 system prompt 折成 `messages` 里一条 **content 为字符串**的消息；0.85/0.82 的 `estimateMessageTokens` 却把 `message.content` 当 block 数组遍历，走到 `block.name.length` → `undefined.length`。请求在构造 body 之前就炸，日志里只有一句不透明的 `PI_AI_ERROR`，且**全程没有发出任何上游请求**（`usage` 与耗时全 0）。
+  - `package.json` 增加 `"dependencies": { "@earendil-works/pi-ai": "0.87.1" }`（与上游 0.7.6 的做法一致）：插件自己装一份，profile 根有旧副本也不会被抢占。
+  - 移植上游的 `src/pi-ai-guard.ts`，在 `apply()` 启动时解析**本模块实际加载到的那一份** pi-ai，版本不符就打一行点名具体版本的警告（只警告不抛：宿主可能仍能服务其他 provider）。以后再发生同类漂移，看到的是「加载了 0.85.1，本插件需要 0.87.1」，而不是那句无从下手的话。
+
+  **二、探测结果渲染未兜底 `efforts`（插槽崩溃）**。`isWorkBuddyWebStatus` 只校验判别字段，`probe.results[]` 的形状没有任何保障，下游四处直接读长度：
+  - `client/WorkBuddyProbeControl.tsx` 的 tooltip 与结果气泡：改为 `(result.efforts?.length ?? 0) > 0`。
+  - `client/WorkBuddySettingsPage.tsx` 的模型行徽标：该行原先在 `validation` 判断**之前**就 `result.efforts.join(...)`，只要 `result !== undefined` 就必然解引用，连非 `validating` 的缺字段记录都能崩；两处一并兜底。
+  - 设置页的状态缓存新增 `hasRenderableProbeResults()`：`probe.results` 里任一条 `efforts` 不是数组就**整份**文档作废（不是丢单条）。缓存是共享的 `localStorage`，0.13.11 起首屏直接渲染它，因此旧版本或同源其他客户端写入的一份文档足以在首屏崩掉 `conversation.input.right` —— 这也解释了 issue #77 里「清空 `.workbuddy-probe.json` 仍然复现」（该文件是宿主侧记录，浏览器侧缓存是另一份）。
+  - 未采用的更彻底做法（收紧 `isWorkBuddyWebStatus` 对 `probe.results` 逐条校验）：它会改动两半边共用的守卫，回归面更大，本次按最小面处理。
+
 ## [0.13.11] — 2026-10-06
 
 - **输入框额度徽标移到最右侧，并且可以点开看分账号额度**：那枚「WorkBuddy: 5,266」从"和上下文占用挤在一起"改为排在 composer dock 行内最后 —— 位置由 flex `order` 决定（DSH 把上下文占用控件追加在插槽条目**之后**，且插槽出口是 `display:contents`，只靠 DOM 顺序会落在它左边），再用 `margin-left:auto` 顶到行右端。点击徽标展开的面板**照 DSH 自己的上下文占用弹框（`ContextMeter`）实现**，不是另发明一个：同一套定位与关闭原语（`useAnchoredPosition` 上方定位 + `useDismissOnOutsidePointer` + Esc）、同样 **portal 到 `document.body`**（否则会被 composer 的 overflow 裁掉）、同一套菜单材质（`--dsw-specific-menu` + backdrop-filter + `--dsw-elevation-prominent`）、同样 `min(264px, 100vw - 24px)` 宽度与 12px 内边距、同样的"标题行 + 4px 容量条 + `dl/dt/dd` 行"结构；触发按钮也照抄它的字号/内边距/圆角与 hover、展开态填充。面板内按 **WorkBuddy / WorkBuddy AI 分组，每组一行一个已添加账号**，显示各自余额（有上限则"剩余 / 上限"，没读过则「尚未读取」而不是 0）；没有账号的产品整组不出现。
@@ -40,6 +54,7 @@
 - 截图换成 2026-10-01 实拍（对话、模型选择器、设置账号、设置模型），并在仓库根声明 `screenshots.json`。
 - 并入上游：Windows 在 Electron 宿主内发现桌面 App（#66），以及国际端点的 effort 拒绝码按区域识别（#75）。
 
+[0.13.12]: https://github.com/functy23/dsh-workbuddy-connect-functy/releases/tag/v0.13.12
 [0.13.11]: https://github.com/functy23/dsh-workbuddy-connect-functy/releases/tag/v0.13.11
 [0.13.10]: https://github.com/functy23/dsh-workbuddy-connect-functy/releases/tag/v0.13.10
 [0.13.9]: https://github.com/functy23/dsh-workbuddy-connect-functy/releases/tag/v0.13.9

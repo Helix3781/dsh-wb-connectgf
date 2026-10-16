@@ -117,13 +117,37 @@ function statusCacheKey(variantId: string): string {
   return `${STATUS_CACHE_PREFIX}/${variantId}`
 }
 
+/**
+ * Whether a cached document's `probe.results` entries are all renderable.
+ *
+ * {@link isWorkBuddyWebStatus} checks only the discriminator, so a stored
+ * document can carry a result row whose `efforts` is missing — a shape the
+ * renderer dereferences (`result.efforts.length`). The live route cannot
+ * produce one (the host's store validates every row it reads), but this cache
+ * is shared `localStorage`: a document written by an older build, or by any
+ * other client on this origin, is not covered by that guarantee and would crash
+ * the first paint, before the live read has any chance to replace it.
+ *
+ * A row that fails this check drops the WHOLE document rather than the row:
+ * the document is a single answer, and keeping a partially-trusted one would
+ * let the rest of it be read as though the missing row had never been there.
+ */
+export function hasRenderableProbeResults(status: WorkBuddyWebStatus): boolean {
+  if (status.status !== 'signed-in') return true
+  const results = status.probe?.results
+  if (results === undefined) return true
+  return Array.isArray(results) && results.every(result =>
+    result !== null && typeof result === 'object' && Array.isArray(result.efforts))
+}
+
 /** Read one cached document, or `undefined` when there is none to trust. */
 function readCachedStatus(variantId: string): WorkBuddyWebStatus | undefined {
   try {
     const raw = localStorage.getItem(statusCacheKey(variantId))
     if (raw === null) return undefined
     const parsed: unknown = JSON.parse(raw)
-    return isWorkBuddyWebStatus(parsed) ? parsed : undefined
+    if (!isWorkBuddyWebStatus(parsed)) return undefined
+    return hasRenderableProbeResults(parsed) ? parsed : undefined
   } catch {
     return undefined
   }
@@ -826,8 +850,8 @@ function ModelsBlock({ variant, status, probe, busy, t, staged, context, onConte
                     const result = probe.results.find(entry => entry.id === model.id)
                     if (result === undefined) return null
                     return (
-                      <Badge tone="ok" title={t('probeTooltipVerified', { levels: result.efforts.join(' / ') })}>
-                        {result.validation === 'validating' && result.efforts.length > 0
+                      <Badge tone="ok" title={t('probeTooltipVerified', { levels: (result.efforts ?? []).join(' / ') })}>
+                        {result.validation === 'validating' && (result.efforts?.length ?? 0) > 0
                           ? result.efforts.join(' / ')
                           : t(result.validation === 'non-validating' ? 'probeResultNotValidating' : 'probeResultUnknown')}
                       </Badge>

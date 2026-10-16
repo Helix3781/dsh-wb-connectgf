@@ -47,6 +47,7 @@ import { WORKBUDDY_PREFERENCES, statedPreferences } from './preferences.ts'
 import type { WorkBuddyPreferenceConfig } from './preferences.ts'
 import { clearHostHeartbeat, writeHostHeartbeat } from './host-heartbeat.ts'
 import { WORKBUDDY_CONNECT_VERSION } from './version.ts'
+import { piAiVersionWarning } from './pi-ai-guard.ts'
 import { CN_VARIANT, WORKBUDDY_VARIANTS, type WorkBuddyVariant } from './variants.ts'
 import type { WorkBuddyAccountAction, WorkBuddyAccountResult } from './status-paths.ts'
 
@@ -876,6 +877,16 @@ async function startVariant(ctx: Context, runtime: VariantRuntime): Promise<bool
  * working without re-registering the provider.
  */
 export function apply(ctx: Context, config: Config): void {
+  // Report a pi-ai copy from another generation before anything registers. The
+  // wrong one turns every request into an opaque `PI_AI_ERROR` (see
+  // ./pi-ai-guard.ts), so naming it here is what makes that failure diagnosable
+  // instead of looking like a plugin bug. A warning, not a throw: a host that
+  // loaded the wrong copy may still serve its other providers.
+  const piAiWarning = piAiVersionWarning()
+  if (piAiWarning !== undefined) {
+    ctx.logger.warn(`dsh-workbuddy-connect: ${piAiWarning}`)
+  }
+
   // Live configuration source: starts as the applied config and is replaced by
   // the settings section's source once one is installed, so edits reach the
   // probe consent gate without a restart.

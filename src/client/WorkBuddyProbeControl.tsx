@@ -230,7 +230,7 @@ function tooltipText(
   if (state.busy) return t('probeRunning', { model })
   const result = state.result
   if (result !== undefined) {
-    if (result.validation === 'validating' && result.efforts.length > 0) {
+    if (result.validation === 'validating' && (result.efforts?.length ?? 0) > 0) {
       return t('probeTooltipVerified', { levels: result.efforts.join(' / ') })
     }
     if (result.validation === 'non-validating') return t('probeTooltipNotValidating')
@@ -461,7 +461,7 @@ function ModelProbe({ model, card, label, t }: {
 
 /** Compose the one-line outcome string the note bubble shows. */
 function noteText(t: WorkBuddyTranslate, result: WorkBuddyWebProbeModel): string {
-  if (result.validation === 'validating' && result.efforts.length > 0) {
+  if (result.validation === 'validating' && (result.efforts?.length ?? 0) > 0) {
     return t('probeNoteVerified', { levels: result.efforts.join(' / ') })
   }
   if (result.validation === 'non-validating') return t('probeNoteNotValidating')
