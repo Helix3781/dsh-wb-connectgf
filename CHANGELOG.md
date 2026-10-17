@@ -2,11 +2,12 @@
 
 版本号即 git tag，遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.13.13] — 2026-10-17
 
 - **修复「探测思考强度」在 WorkBuddy AI 上恒定报 `sentinel status 400 (invalid_parameter_value)`**：探测的第二步（sentinel，一个不可能合法的 `reasoning_effort` 值）用来判断上游到底认不认这个参数，只有把它的 400 认成「effort 值非法」才会继续走第三步逐档扫描。Global 端点在 2026-10-01 的实测里回的是手写码 `model_param_invalid`，2026-10-17 起改成回上游 `InvalidParameter` 句子生成的 `invalid_parameter_value` —— 语义没变、码变了，于是 `INVALID_EFFORT_CODES.global` 不再命中，整次探测降级成 `unknown`，界面只显示「检测未完成」。
   - `src/probe.ts` 的 global 词表补上 `invalid_parameter_value`（保留旧的 `model_param_invalid`，两者都是句子级通用码，归属仍由 baseline 步骤担保）。`cn` 词表不动：该端点实测一直回字段级的 `invalid_reasoning_effort`。
   - `tests/probe.spec.ts` 新增一条用例：global 端点对 sentinel 回 `invalid_parameter_value` 时必须判为 `validating` 并扫完全部五档；原有「同信封兄弟码仍降级 unknown」的用例继续守住不扩面。
+
 ## [0.13.12] — 2026-10-16
 
 - **修复「Cannot read properties of undefined (reading 'length')」** —— 这个报错在本插件里有两个互不相干的成因，本版一起处理。
