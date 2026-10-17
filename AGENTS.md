@@ -51,7 +51,26 @@
 
 ## 发版规矩
 
-未经明确指令**不得 `npm publish`、不得打 release tag**。**push 到远端（含普通 main 推送）必须先经用户同意**；本地 commit 可自主（用户说「提」= 只 commit，不含 push）。发布前 `pnpm run check` 全过，顺序固定：**先升版本号 → check/构建 → 最后发布**。
+未经明确指令**不得 `npm publish`、不得打 release tag**。**push 到远端（含普通 main 推送）必须先经用户同意**；本地 commit 可自主（用户说「提」= 只 commit，不含 push）。
+
+顺序固定：**先升版本号 → build → test/typecheck → 最后发布**。
+
+- **`build` 必须排在 `test` 之前**，别直接 `pnpm run check`（它是 `typecheck → test → build`）。`tests/version.spec.ts` 断言「构建产物里的版本号等于 `package.json` 的版本号」，升完版本号不重新 build 就跑 test，一定会红在旧 `lib/` 上，看起来像版本号写错了，其实只是产物过期。0.13.13 实测踩过。
+- **落库判据是 tarball 能取到，不是 `npm publish` 打印的那行**。0.13.13 时 `+ pkg@ver` 打印后 `dist-tags` 立刻变、`versions[ver]` 元数据（含 integrity 与签名）也在，但 tarball 仍 404 了约两分钟；0.13.7 那次约十分钟。中间态别当成失败重发。
+- **`latest` 变了不代表能装**：验收要跑一次干净安装（`npm install <pkg>@<ver>`）并确认产物里有本次改动，再打 tag。
+
+### 2FA：本机发布要走 web 授权
+
+账号 `funlze` 的 2FA 类型是 **web**（`npm profile get` 显示 `auth-and-writes`，但没有绑定 TOTP，所以设置页里根本没有「双重认证」选项可加验证器）。发布时 npm 要求浏览器授权，不是 6 位动态码：
+
+- `npm login --auth-type=web` 只拿到登录 token，**发布仍会被 `EOTP` 挡下**（npm 正在限制绕过 2FA 的 token 用于直接发布）。
+- 真正的发布授权：`npm publish` 失败时给出的 `https://www.npmjs.com/auth/cli/<uuid>` 链接，在浏览器里点确认即可，npm 会接着把包传完。
+- **坑**：npm 把错误输出里的该 URL 遮成 `***`，`--otp` 也没用。取明文链接的办法是让 npm 跑在伪终端下：`script -q /tmp/x.log npm publish --access public < /dev/null`，然后从 `/tmp/x.log` 里 grep `auth/cli`。
+- 别去建 Automation token 绕过：npm 已公告这类 token 在「账号变更与直接发布」上会被限制。
+
+### tag 与发布的关系
+
+**先发布成功、确认 tarball 可下载，再打 tag**。发布失败时提前打的 tag 会指向一个没上架的版本。tag 用附注 tag 并指定署名：`git -c user.name=functy23 -c user.email=functy23@users.noreply.github.com tag -a vX.Y.Z -m "vX.Y.Z"`（注意 `-c` 必须放在 `tag` 前面，写成 `git tag -a ... -c ...` 会报 `unknown switch 'c'`）。仓库本身没有配置 `user.name`/`user.email`，不显式指定就会记成别的身份。
 
 ## 硬性不变量（改代码别破）
 
