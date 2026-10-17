@@ -131,12 +131,19 @@ export type ProbeRegion = 'cn' | 'global'
  *   endpoint was measured answering the specific code, and reading a generic
  *   code there would widen attribution beyond what was observed.
  *
+ * - `invalid_parameter_value` — the global endpoint, measured 2026-10-17. The
+ *   hand-written `model_param_invalid` above was replaced by the code an
+ *   upstream-generated `InvalidParameter` sentence carries, so the sentence's
+ *   arrival moved the code without moving the meaning. Added to `global` only,
+ *   on the same reasoning as `model_param_invalid`: it is a sentence code, not
+ *   a field-naming one, so the baseline step is what earns it attribution.
+ *
  * Neither is treated as a permanent protocol promise: anything unrecognized
  * still degrades to `unknown` rather than to a capability conclusion.
  */
 const INVALID_EFFORT_CODES: Record<ProbeRegion, ReadonlySet<string>> = {
   cn: new Set(['invalid_reasoning_effort']),
-  global: new Set(['invalid_reasoning_effort', 'model_param_invalid']),
+  global: new Set(['invalid_reasoning_effort', 'model_param_invalid', 'invalid_parameter_value']),
 }
 
 /** Whether an attempt is an attributable rejection of the effort value. */

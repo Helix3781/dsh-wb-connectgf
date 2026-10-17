@@ -182,6 +182,27 @@ describe('probeModel', () => {
     expect(outcome.validation).toBe('unknown')
   })
 
+  it('reads the global endpoint\'s invalid_parameter_value sentence as an effort rejection', async () => {
+    // Measured 2026-10-17 on www.workbuddy.ai: the same sentinel is now
+    // answered 400 with `extError.code: invalid_parameter_value` — the code
+    // an upstream-generated `InvalidParameter` sentence carries, replacing the
+    // hand-written `model_param_invalid` seen on 2026-10-01. The baseline has
+    // still proved the identical request without the field succeeds.
+    const sentence: ProbeAttempt = { status: 400, streamed: false, errorCode: 'invalid_parameter_value' }
+    const table = new Map<string | undefined, ProbeAttempt>([
+      [undefined, ACCEPTED],
+      [SENTINEL, sentence],
+      ['low', ACCEPTED],
+      ['medium', ACCEPTED],
+      ['high', ACCEPTED],
+      ['xhigh', ACCEPTED],
+      ['max', ACCEPTED],
+    ])
+    const outcome = await probeModel({ send: tableSender(table), sentinel: () => SENTINEL, region: 'global' })
+    expect(outcome.validation).toBe('validating')
+    expect(outcome.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+  })
+
   it('does not count a 200 without a stream as acceptance', async () => {
     const table = new Map<string | undefined, ProbeAttempt>([
       [undefined, { status: 200, streamed: false }],
