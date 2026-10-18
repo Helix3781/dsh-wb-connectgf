@@ -851,7 +851,8 @@ function ProductAccountsCard({ variant, accounts, status, busy, now, t, onAction
         <span className="wbp-spacer" />
         <span className="wbp-productTotal">
           {total === undefined
-            ? accounts.length === 0 ? '' : t('accountCreditsPending')
+            // No balance read for any account yet: an em dash, never a zero.
+            ? accounts.length === 0 ? '' : '—'
             : capacity > 0
               ? t('accountMetaRemainingOf', { remaining: formatCredit(total), total: formatCredit(capacity) })
               : t('accountMetaRemaining', { remaining: formatCredit(total) })}
