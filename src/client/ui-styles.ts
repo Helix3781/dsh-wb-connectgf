@@ -45,8 +45,6 @@ export const PANEL_CSS_ID = 'dsh-workbuddy-connect-panel'
  */
 export const PAGE_CSS = `
 .wbp-section{max-width:720px;color:var(--dsw-alias-label-primary);flex-direction:column;display:flex}
-.wbp-title{margin:0;color:var(--dsw-alias-label-primary);font-size:16px;font-weight:500;line-height:24px}
-.wbp-intro{margin:4px 0 0;color:var(--dsw-alias-label-tertiary);font-size:14px;line-height:22px}
 .wbp-spacer{flex:1}
 /* Groups: a heading over hairline-separated rows, no card surface. */
 .wbp-group{flex-direction:column;display:flex;margin-top:28px}
@@ -54,8 +52,6 @@ export const PAGE_CSS = `
 .wbp-groupTitle{margin:0;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px}
 .wbp-groupDesc{margin:0 0 12px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
 .wbp-rows>.wbp-groupDesc{margin:0;padding:4px 0 0}
-.wbp-disclosure{width:100%;padding:0 0 4px;border:0;background:0 0;font:inherit;text-align:left;cursor:pointer;border-radius:6px}
-.wbp-disclosure:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 .wbp-rows{flex-direction:column;display:flex}
 .wbp-row{align-items:center;gap:8px;display:flex;padding:16px 0;border-bottom:.5px solid var(--dsw-alias-border-l2)}
 .wbp-rows>.wbp-row:last-child{border-bottom:0}
@@ -69,40 +65,23 @@ export const PAGE_CSS = `
 .wbp-rowDesc p+p{margin-top:4px}
 .wbp-rowError{margin:0;color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}
 .wbp-rowControl{flex:none;align-items:center;justify-content:flex-end;gap:8px;display:inline-flex;max-width:60%}
-.wbp-rowInput{width:200px}
-.wbp-rowInputWide{width:280px}
 /* The platform's link button: a compact capsule with no fill until hovered. */
 .wbp-linkButton{box-sizing:border-box;flex:none;align-items:center;display:inline-flex;height:28px;padding:0 10px;border:0;border-radius:14px;background:0 0;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;line-height:18px;white-space:nowrap;cursor:pointer}
 .wbp-linkButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
 .wbp-linkButton:disabled{cursor:default;opacity:.4}
 .wbp-linkButton:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3)}
 /* Tags: the platform Tag's capsule (11/17, weight 500). */
-.wbp-badges{align-items:center;gap:8px;display:inline-flex}
-.wbp-badge,.wbp-badgeMuted{flex:none;align-items:center;display:inline-flex;white-space:nowrap;border-radius:999px;corner-shape:round;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}
-.wbp-badge{background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary)}
-.wbp-badgeMuted{border:.5px solid var(--dsw-alias-border-l4);color:var(--dsw-alias-label-tertiary)}
-.wbp-badgeWarn{background:var(--dsw-alias-state-warn-tertiary,var(--dsw-alias-bg-module-platform));color:var(--dsw-alias-state-warn-label,var(--dsw-alias-label-secondary))}
-.wbp-badgeError{background:transparent;color:var(--dsw-alias-state-error-primary)}
-.wbp-badgeOk{background:transparent;color:var(--dsw-alias-state-success-primary)}
 /* A label paired with a value on one baseline (the total-credit line). */
-.wbp-factRow{align-items:baseline;gap:8px;flex-wrap:wrap;display:flex}
 .wbp-factLabel{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
 .wbp-factValue{color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
 /* The stacked field (the Models-page provider card and the account forms):
  * the platform SettingsForm field's metrics. */
-.wbp-field{flex-direction:column;gap:6px;padding:12px 0;display:flex}
-.wbp-field+.wbp-field{border-top:.5px solid var(--dsw-alias-border-l2)}
 .wbp-fieldHead{align-items:center;gap:8px;display:flex}
 .wbp-label{min-width:0;color:var(--dsw-alias-label-primary);flex:1;font-size:13px;font-weight:500;line-height:1.5}
-.wbp-reset{font:inherit;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;padding:0;font-size:12px;line-height:18px}
-.wbp-reset:hover:not(:disabled){color:var(--dsw-alias-label-primary)}
-.wbp-reset:disabled{cursor:default;opacity:.4}
 .wbp-input{box-sizing:border-box;height:32px;min-width:0;padding:0 10px;border:.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1);font:inherit;color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px}
 .wbp-input::placeholder{color:var(--dsw-alias-label-dimmed)}
 .wbp-input:focus-visible{border-color:var(--dsw-alias-brand-primary);outline:none}
 .wbp-input:disabled{opacity:.6;cursor:default}
-.wbp-inputInvalid{border-color:var(--dsw-alias-state-error-primary)}
-.wbp-invalid{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px;line-height:18px}
 .wbp-hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:12px;line-height:18px}
 /* An informational outcome (a save that took an older host's route): the same
  * metrics as the error line and the other colour, so it reads as a note. */
@@ -131,9 +110,9 @@ export const PAGE_CSS = `
  * slides under the picked segment. Segments are equal grid tracks, so the
  * indicator's width and offset follow from the count and index alone — no DOM
  * measurement. */
-.wbp-segmented{position:relative;display:inline-grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:2px;padding:3px;border-radius:9px;background:var(--dsw-alias-interactive-bg-hover)}
-.wbp-segmentIndicator{position:absolute;top:3px;left:3px;width:calc((100% - 6px - 2px * (var(--wbp-segment-count) - 1)) / var(--wbp-segment-count));height:calc(100% - 6px);border-radius:7px;background:var(--dsw-alias-bg-layer-1);box-shadow:var(--dsw-elevation-soft,0 1px 2px rgba(0,0,0,.12));transform:translateX(calc(var(--wbp-segment-index) * (100% + 2px)));transition:transform .16s ease;pointer-events:none}
-.wbp-segment{box-sizing:border-box;position:relative;z-index:1;height:28px;padding:0 16px;border:0;border-radius:7px;background:0 0;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color .12s ease}
+.wbp-segmented{position:relative;display:inline-grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:2px;padding:4px;border-radius:var(--dsw-radius-md,9px);background:var(--dsw-alias-interactive-bg-hover)}
+.wbp-segmentIndicator{position:absolute;top:4px;left:4px;width:calc((100% - 8px - 2px * (var(--wbp-segment-count) - 1)) / var(--wbp-segment-count));height:calc(100% - 8px);border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-bg-layer-1);box-shadow:var(--dsw-elevation-soft,0 1px 2px rgba(0,0,0,.12));transform:translateX(calc(var(--wbp-segment-index) * (100% + 2px)));transition:transform .16s ease;pointer-events:none}
+.wbp-segment{box-sizing:border-box;position:relative;z-index:1;height:28px;padding:0 16px;border:0;border-radius:var(--dsw-radius-sm,6px);background:0 0;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color .12s ease}
 .wbp-segment:hover:not(:disabled),.wbp-segment[aria-checked=true]{color:var(--dsw-alias-label-primary)}
 .wbp-segment:disabled{cursor:default;opacity:.4}
 /* ------------------------------------------------- the model picker menu */
@@ -161,24 +140,8 @@ export const PAGE_CSS = `
  * reference implementation's .cc-kebab). */
 .wbp-kebab{width:3px;height:3px;border-radius:50%;corner-shape:round;background:currentColor;box-shadow:0 -5px 0 currentColor,0 5px 0 currentColor}
 /* ------------------------------------------------ account meters (cc port) */
-.wbp-accountMeters{flex-wrap:wrap;gap:6px 20px;display:flex;padding-left:16px}
-.wbp-miniMeter{align-items:center;gap:8px;display:inline-flex;font-size:12px;line-height:18px}
-.wbp-miniMeterLabel{color:var(--dsw-alias-label-tertiary)}
-.wbp-miniMeterTrack{overflow:hidden;background:var(--dsw-alias-bg-module-platform);border-radius:999px;width:64px;height:4px}
-.wbp-miniMeterFill{display:block;background:var(--dsw-alias-brand-primary);border-radius:999px;height:100%}
-.wbp-miniMeterFillWarn{background:var(--dsw-alias-state-error-primary)}
-.wbp-miniMeterValue{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 /* ------------------------------------------- the add-account affordance */
 /* The Models page's dashed add button, opening a filled panel in its place. */
-.wbp-addButton{box-sizing:border-box;align-items:center;justify-content:center;gap:6px;display:flex;width:100%;height:44px;border:1px dashed var(--dsw-alias-border-l3);border-radius:16px;background:0 0;color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px;cursor:pointer}
-.wbp-addButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
-.wbp-addButton:disabled{cursor:default;opacity:.4}
-.wbp-accountList+.wbp-addButton,.wbp-accountList+.wbp-addPanel,.wbp-usageStats+.wbp-addButton{margin-top:12px}
-.wbp-addGlyph{position:relative;width:12px;height:12px}
-.wbp-addGlyph::before,.wbp-addGlyph::after{content:'';position:absolute;background:currentColor;border-radius:1px}
-.wbp-addGlyph::before{left:0;right:0;top:5.25px;height:1.5px}
-.wbp-addGlyph::after{top:0;bottom:0;left:5.25px;width:1.5px}
-.wbp-addPanel{flex-direction:column;gap:12px;display:flex;padding:14px 16px;border-radius:12px;background:var(--dsw-alias-bg-module-platform)}
 /* ------------------------------------------------------ staged edit bar (cc port) */
 /* The floating save bar, pinned to the bottom of the page's scrollport and slid
  * out of view when there is nothing to save. Ported from the reference
@@ -201,71 +164,61 @@ export const PAGE_CSS = `
 .wbp-saveBarGhost:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
 .wbp-saveBarPrimary{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary));color:var(--dsw-alias-label-primary-foreground,#fff)}
 .wbp-saveBarPrimary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover,var(--dsw-alias-button-primary-fill,var(--dsw-alias-brand-primary)))}
-.wbp-chevron{flex-shrink:0;border-right:1.5px solid var(--dsw-alias-label-tertiary);border-bottom:1.5px solid var(--dsw-alias-label-tertiary);width:7px;height:7px;margin-right:6px;margin-bottom:3px;transform:rotate(45deg);transition:transform .15s ease}
-.wbp-chevronUp{transform:rotate(-135deg);margin-bottom:-3px}
 /* ------------------------------------------------------------- accounts */
-.wbp-accountList{flex-direction:column;gap:8px;display:flex}
-.wbp-accountItem{flex-direction:column;gap:10px;display:flex;padding:12px 14px;border:.5px solid var(--dsw-alias-border-l4);border-radius:16px}
+/* One card per PRODUCT, every account of that product as a row inside it.
+ * The card is the platform's outlined surface (0.5px border-l4, 16px radius),
+ * because it groups rows rather than being a row itself; the rows inside carry
+ * no chrome at all, only a hairline between them. */
+.wbp-productCards{flex-direction:column;gap:12px;display:flex}
+.wbp-productCard{box-sizing:border-box;flex-direction:column;display:flex;padding:12px 14px 4px;border:.5px solid var(--dsw-alias-border-l4);border-radius:16px;min-width:0}
+.wbp-productHead{align-items:center;gap:8px;display:flex;min-width:0;padding-bottom:8px}
+.wbp-productName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px}
+.wbp-productCount{flex:none;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+.wbp-productTotal{flex:none;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wbp-productDetail{margin:0 0 8px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+.wbp-accountList{flex-direction:column;display:flex;min-width:0}
+/* One account: a name line and ONE grey line under it. No disclosure, no
+ * per-account card — the pool is one subject and its rows are comparable only
+ * when they share a frame. The hairline separates rows, and the last row drops
+ * it so the card's own border is the only line at the bottom. */
+.wbp-accountRow{flex-direction:column;gap:2px;display:flex;min-width:0;padding:10px 2px;border-bottom:.5px solid var(--dsw-alias-border-l2)}
+.wbp-accountList>.wbp-accountRow:last-child{border-bottom:0}
 /* The account the pool is actually serving from: the reference
- * implementation's own active-row hairline. */
-.wbp-accountItemActive{border-color:var(--dsw-static-neutral-bluish-400,var(--dsw-alias-border-l3))}
-.wbp-accountHead{align-items:center;gap:4px;display:flex;min-height:28px}
-.wbp-accountToggle{align-items:center;gap:8px;display:flex;flex:1;min-width:0;padding:0;background:0 0;border:0;color:inherit;cursor:pointer;font:inherit;text-align:left}
-.wbp-accountToggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px;border-radius:4px}
+ * implementation's own active-row mark, kept as a left accent rather than a
+ * border so it does not shift the row's text by a pixel when it flips. */
+.wbp-accountRowActive{padding-left:8px;box-shadow:inset 2px 0 0 var(--dsw-alias-brand-primary)}
+.wbp-accountHead{align-items:center;gap:8px;display:flex;min-width:0;min-height:22px}
 .wbp-accountName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px}
-/* The product label and the account's own upstream name, ported from the
- * reference implementation's .cc-usageAccount / .cc-usagePlan. */
-.wbp-accountProduct{max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
-.wbp-usagePlan{flex:none;white-space:nowrap;border:.5px solid var(--dsw-alias-border-l3);color:var(--dsw-alias-label-secondary);border-radius:999px;corner-shape:round;padding:0 7px;font-size:11px;font-weight:500;line-height:17px}
+/* The grey meta line: every figure the row states, separated by a middot. It
+ * wraps rather than truncates — a figure the reader cannot see is worse than a
+ * second line — and its numbers are tabular so rows line up down the column. */
+.wbp-accountMeta{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .wbp-usagePlanStatus{flex:none;margin:0;white-space:nowrap;color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}
-.wbp-tabDot{flex-shrink:0;width:8px;height:8px;border-radius:50%;corner-shape:round}
-.wbp-tabDotOk{background:var(--dsw-alias-state-success-primary)}
-.wbp-tabDotWarn{background:var(--dsw-alias-state-warn-primary,#d97706)}
-.wbp-tabDotError{background:var(--dsw-alias-state-error-primary)}
-.wbp-tabDotOff{background:var(--dsw-alias-label-dimmed,#9aa0a6)}
 .wbp-iconButton{flex-shrink:0;align-items:center;justify-content:center;display:inline-flex;width:28px;height:28px;padding:0;background:0 0;border:0;border-radius:6px;color:var(--dsw-alias-label-tertiary);cursor:pointer}
 .wbp-iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .wbp-iconButton:disabled{cursor:default;opacity:.4}
 .wbp-iconButton:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3)}
-.wbp-accountDetails{container-type:inline-size;border-top:.5px solid var(--dsw-alias-border-l2);flex-direction:column;gap:14px;display:flex;padding-top:12px}
 .wbp-inlineForm,.wbp-confirmBar{flex-direction:column;gap:8px;display:flex}
 .wbp-inlineActions{align-items:center;gap:8px;display:flex;flex-wrap:wrap}
 .wbp-confirmBar{border:.5px solid var(--dsw-alias-state-error-primary);border-radius:12px;padding:12px 14px}
 .wbp-confirmText{color:var(--dsw-alias-label-primary);margin:0;font-size:14px;line-height:22px}
 /* Adding an account: the Models page's dashed add button, opening a filled
  * panel in its place. */
-.wbp-addButton{box-sizing:border-box;align-items:center;justify-content:center;gap:6px;display:flex;width:100%;height:44px;border:1px dashed var(--dsw-alias-border-l3);border-radius:16px;background:0 0;color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px;cursor:pointer}
-.wbp-addButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
-.wbp-addButton:disabled{cursor:default;opacity:.4}
-.wbp-addButton:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3)}
-.wbp-addGlyph{position:relative;width:12px;height:12px}
-.wbp-addGlyph::before,.wbp-addGlyph::after{content:'';position:absolute;background:currentColor;border-radius:1px}
-.wbp-addGlyph::before{left:0;right:0;top:5.25px;height:1.5px}
-.wbp-addGlyph::after{top:0;bottom:0;left:5.25px;width:1.5px}
-.wbp-addPanel{flex-direction:column;gap:12px;display:flex;padding:14px 16px;border-radius:12px;background:var(--dsw-alias-bg-module-platform)}
-.wbp-panelTitle{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px}
 /* Account report: stat tiles are filled panels, like the platform's editors. */
 /* The per-product total tiles sit under the account cards, so they need the
  * same air the add button gets — flush against the last card they read as part
  * of it. The reference implementation has no equivalent row, so this spacing is
  * ours to set. */
-.wbp-usageStats{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;display:grid;margin-top:12px}
 .wbp-usageStat{min-width:0;flex-direction:column;gap:2px;display:flex;padding:10px 12px;border-radius:12px;background:var(--dsw-alias-bg-module-platform)}
 .wbp-usageStatLabel{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
 .wbp-usageStatValue{color:var(--dsw-alias-label-primary);font-size:16px;font-weight:500;line-height:24px;font-variant-numeric:tabular-nums}
 .wbp-usageStatSub{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Tabs across the top of the page: one per product. */
-.wbp-tabs{flex-wrap:wrap;gap:6px;display:flex}
-.wbp-tab{align-items:center;font:inherit;color:var(--dsw-alias-label-secondary);cursor:pointer;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:999px;padding:2px 10px;font-size:12px;line-height:18px;display:inline-flex;gap:6px}
-.wbp-tab:hover:not(.wbp-tabActive){color:var(--dsw-alias-label-primary)}
-.wbp-tabActive{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-brand-primary)}
 /* --------------------------------------------------------------- models */
-.wbp-modelList{flex-direction:column;display:flex}
 .wbp-modelRow{align-items:center;gap:8px;display:flex;padding:10px 0;border-bottom:.5px solid var(--dsw-alias-border-l2)}
-.wbp-modelList>.wbp-modelRow:last-child{border-bottom:0}
+/* The row's left half: the mark, the name, its promotions and its rate. Grows to take the space the fixed control column leaves. */
+.wbp-modelMain{align-items:center;gap:8px;display:flex;flex:1;min-width:0}
 .wbp-modelName{min-width:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wbp-modelId{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:17px;font-variant-numeric:tabular-nums}
-.wbp-modelMeta{align-items:center;gap:8px;display:inline-flex;flex-wrap:wrap}
 /* The row's right-hand column, as a fixed grid so the rows line up top to
  * bottom: one column per slot (probe result, Detect button, context figure),
  * each sized to its widest occupancy. Flow layout could not hold a column — a
@@ -303,7 +256,7 @@ export const PAGE_CSS = `
 .wbp-linkFallback{display:flex;flex-direction:column;gap:8px}
 .wbp-linkFallback .wbp-input{font-size:12px}
 .wbp-tokenArea:focus-visible{border-color:var(--dsw-alias-brand-primary);outline:none}
-@media (prefers-reduced-motion:reduce){.wbp-chevron,.wbp-toggle::after,.wbp-segmentIndicator,.wbp-segment{transition:none}}
+@media (prefers-reduced-motion:reduce){.wbp-toggle::after,.wbp-segmentIndicator,.wbp-segment{transition:none}}
 `
 
 /** The panel stylesheet. */
@@ -390,6 +343,14 @@ export const PANEL_CSS = `
 .wbp-badgeRow{justify-content:space-between;align-items:center;gap:12px;padding:2px 0;display:flex}
 .wbp-badgeRow dt{color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .wbp-badgeRow dd{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);margin:0;white-space:nowrap}
+/* The expanded panel: the context popover's own material (.JObwrW_panel) —
+ * the menu surface plus its backdrop filter, the prominent elevation token, the
+ * same 12px/-lg radius, the same min(264px, …) width, and the same 12px padding
+ * and 12px type. Fixed-positioned from the trigger (and portalled) so it survives
+ * scrolling and the composer's own overflow. */
+/* One product's block, with the pool's own line above its accounts. Separated by
+ * a margin rather than a rule: the context popover's two sections are set apart
+ * the same way, and a hairline here would draw a card the row above does not. */
 /* -------------------------------------------------------- the rail icon */
 .wbp-railButton{box-sizing:border-box;width:36px;height:36px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:1px solid transparent;border-radius:8px;flex:none;justify-content:center;align-items:center;margin:0 0 4px;padding:0;display:inline-flex}
 .wbp-railButton:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}
@@ -404,9 +365,6 @@ export const PANEL_CSS = `
 .wbp-headerText{flex-direction:column;gap:2px;display:flex;min-width:0}
 .wbp-titleLg{margin:0;font-size:18px;font-weight:600;line-height:1.4}
 .wbp-subtitle{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1.5}
-.wbp-meta{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5;font-variant-numeric:tabular-nums}
-.wbp-close{min-width:28px;justify-content:center;padding-left:0;padding-right:0}
-.wbp-close span{font-size:16px;line-height:1}
 .wbp-notice{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:12px;padding:12px 14px;flex-direction:column;gap:4px;display:flex}
 .wbp-noticeError{border-color:var(--dsw-alias-state-error-primary)}
 .wbp-noticeTitle{margin:0;font-size:13px;font-weight:600;line-height:1.5}
@@ -418,30 +376,7 @@ export const PANEL_CSS = `
 .wbp-avatar{flex:none;width:28px;height:28px;color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-module-platform);border-radius:50%;justify-content:center;align-items:center;font-size:12px;font-weight:600;line-height:1;display:inline-flex}
 .wbp-cardIdentity{flex-direction:column;gap:1px;min-width:0;display:flex}
 .wbp-cardTitle{font-size:13px;font-weight:600;line-height:1.4}
-.wbp-block{flex-direction:column;gap:8px;display:flex}
-.wbp-blockTitle{margin:0;color:var(--dsw-alias-label-tertiary);font-size:11px;font-weight:600;line-height:1.5;text-transform:uppercase;letter-spacing:.04em}
-.wbp-planRow{align-items:center;gap:8px;display:flex;flex-wrap:wrap}
-.wbp-fieldLabel{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1.5}
-.wbp-planName{color:var(--dsw-alias-label-primary);font-size:13px;font-weight:600;line-height:1.5}
 .wbp-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
-.wbp-tile{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:8px;padding:8px 10px;flex-direction:column;gap:2px;display:flex;min-width:0}
-.wbp-tileLabel{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5}
-.wbp-tileValue{color:var(--dsw-alias-label-primary);font-size:15px;font-weight:600;line-height:1.4;font-variant-numeric:tabular-nums}
-.wbp-tileSub{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* One account's bench: a labelled bar over its remaining wait. */
-.wbp-windows{flex-direction:column;gap:14px;display:flex}
-.wbp-window{flex-direction:column;gap:6px;display:flex}
-.wbp-windowHead{align-items:baseline;gap:8px;display:flex}
-.wbp-windowLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500;line-height:1.5}
-.wbp-windowValue{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.5;font-variant-numeric:tabular-nums;white-space:nowrap}
-.wbp-windowPct{color:var(--dsw-alias-label-primary);min-width:38px;text-align:right;font-size:12px;font-weight:600;line-height:1.5;font-variant-numeric:tabular-nums}
-.wbp-warnTag{white-space:nowrap;background:var(--dsw-alias-state-warn-tertiary,var(--dsw-alias-bg-module-platform));color:var(--dsw-alias-state-warn-primary,var(--dsw-alias-label-secondary));border-radius:999px;padding:0 8px;font-size:11px;font-weight:600;line-height:17px}
-.wbp-bar{overflow:hidden;background:var(--dsw-alias-bg-layer-1);border-radius:999px;height:8px}
-.wbp-barFill{background:var(--dsw-alias-brand-primary);border-radius:999px;height:100%;transition:width .3s ease}
-.wbp-barFillWarn{background:var(--dsw-alias-state-error-primary)}
-.wbp-windowReset{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:1.5}
-.wbp-badge2{white-space:nowrap;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-brand-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600;line-height:17px}
-.wbp-badge2Warn{background:var(--dsw-alias-state-warn-tertiary,var(--dsw-alias-bg-module-platform));color:var(--dsw-alias-state-warn-primary,var(--dsw-alias-label-secondary))}
-.wbp-badge2Error{background:transparent;color:var(--dsw-alias-state-error-primary)}
 @media (prefers-reduced-motion:reduce){.wbp-barFill,.wbp-footFill{transition:none}}
 `

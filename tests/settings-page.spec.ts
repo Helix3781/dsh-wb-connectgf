@@ -154,21 +154,12 @@ describe('WorkBuddy settings page', () => {
   const text = (): string => document.body.textContent ?? ''
 
   /**
-   * Open every account row.
-   *
-   * A row's actions live behind its disclosure now — the reference layout hides
-   * them until an account is being looked at — so a test that presses one opens
-   * the row first, exactly as a user does. Opening EVERY row (rather than
-   * guessing an index) keeps the assertion about which route a control posts to
-   * where it belongs: in the request, not in the row order.
+   * Account rows carry no disclosure any more: every figure is on the row and
+   * every action is in its kebab menu. Kept as a named no-op so the tests below
+   * read as "look at the row" rather than disappearing into the mount.
    */
   async function expandAccountRows(): Promise<void> {
-    const toggles = [...document.querySelectorAll('button')]
-      .filter(button => button.getAttribute('aria-controls')?.endsWith('-details') === true)
-    for (const toggle of toggles) {
-      if (toggle.getAttribute('aria-expanded') === 'true') continue
-      await act(async () => { toggle.click(); await Promise.resolve() })
-    }
+    await act(async () => { await Promise.resolve() })
   }
 
   const posted = (): { url: string, body: Record<string, unknown> }[] =>
@@ -244,12 +235,13 @@ describe('WorkBuddy settings page', () => {
     const totals = [...document.querySelectorAll('*')]
       .filter(node => node.children.length === 0 && (node.textContent ?? '').trim() !== '')
       .map(node => (node.textContent ?? '').trim())
-    // 1,000 for the CN account and 50 for the international one.
-    expect(totals).toContain('1,000')
-    expect(totals).toContain('50')
+    // Each product's card states its pool total on its head line: 1,000 for the
+    // CN account and 50 for the international one.
+    expect(totals).toContain(t('accountMetaRemaining', { remaining: '1,000' }))
+    expect(totals).toContain(t('accountMetaRemaining', { remaining: '50' }))
     // A cross-product sum would be a number that describes nothing: the credits
     // are not convertible and the accounts are not interchangeable.
-    expect(totals).not.toContain('1,050')
+    expect(totals).not.toContain(t('accountMetaRemaining', { remaining: '1,050' }))
   })
 
   it('leaves the total blank when no balance is known', async () => {
@@ -268,12 +260,10 @@ describe('WorkBuddy settings page', () => {
       account({ available: false, cooldown: { untilMs: Date.now() + 7 * 60_000, reason: 'rate', strikes: 1 } }),
     ])
     await mount()
-    // Composed the way the page composes it: the unit is chosen by
-    // `describeWait`, the wording is local.
-    expect(text()).toContain(t('accountStateWaiting', {
-      reason: t('accountStateLimited'),
-      when: t('waitMinutes', { value: 7 }),
-    }))
+    // The reason is the head chip and the countdown is the grey meta line: the
+    // unit is chosen by `describeWait`, the wording is local.
+    expect(text()).toContain(t('accountStateLimited'))
+    expect(text()).toContain(t('accountMetaResets', { when: t('waitMinutes', { value: 7 }) }))
   })
 
   /**
@@ -285,10 +275,8 @@ describe('WorkBuddy settings page', () => {
       account({ available: false, cooldown: { untilMs: Date.now() + 18 * 3_600_000, reason: 'rate', strikes: 1 } }),
     ])
     await mount()
-    expect(text()).toContain(t('accountStateWaiting', {
-      reason: t('accountStateLimited'),
-      when: t('waitHours', { value: 18 }),
-    }))
+    expect(text()).toContain(t('accountStateLimited'))
+    expect(text()).toContain(t('accountMetaResets', { when: t('waitHours', { value: 18 }) }))
   })
 
   it('reports an expired pasted token, which cannot renew itself', async () => {
@@ -561,7 +549,7 @@ describe('WorkBuddy settings page', () => {
    * with the figures this plugin actually has: the cycle's used/remaining from
    * the upstream, and the request tally it counted itself.
    */
-  it('reports an account cycle figures and request tally when expanded', async () => {
+  it('states an account cycle figures and request tally on its row', async () => {
     byRoute[CN_CARD_VARIANT.statusPath] = signedIn([
       account({ credits: 800, creditsTotal: 1000, creditsUsed: 200, usage: {
         requests: 12,
@@ -578,15 +566,16 @@ describe('WorkBuddy settings page', () => {
     await mount()
     await expandAccountRows()
     const rendered = text()
-    expect(rendered).toContain('200')          // used this cycle
-    expect(rendered).toContain('800')          // remaining
-    expect(rendered).toContain('12')           // requests
-    expect(rendered).toContain('1M')           // input tokens, compact
-    expect(rendered).toContain('25K')          // output tokens
-    expect(rendered).toContain('75.0%')        // cache hit rate
+    // The row's grey line carries every figure, separated by middots.
+    expect(rendered).toContain(t('accountMetaUsed', { used: '200' }))
+    expect(rendered).toContain(t('accountMetaRemainingOf', { remaining: '800', total: '1,000' }))
+    expect(rendered).toContain(t('accountMetaRequests', { count: '12' }))
+    expect(rendered).toContain(t('accountMetaInputTokens', { value: '1M' }))
+    expect(rendered).toContain(t('accountMetaOutputTokens', { value: '25K' }))
+    expect(rendered).toContain(t('accountMetaCache', { percent: '75.0%' }))
   })
 
-  it('says the cache rate is unreported instead of showing zero, and omits absent tiles', async () => {
+  it('omits a cache rate and a used figure the upstream never reported', async () => {
     byRoute[CN_CARD_VARIANT.statusPath] = signedIn([
       account({ credits: 500, usage: {
         requests: 4,
@@ -602,12 +591,13 @@ describe('WorkBuddy settings page', () => {
     await mount()
     await expandAccountRows()
     const rendered = text()
-    // The upstream never reported a cache figure, so a 0% would be a claim.
-    expect(rendered).toContain(t('usageCacheUnknown'))
-    expect(rendered).not.toContain('0.0%')
-    // No cap was declared, so the used-this-cycle tile is absent rather than 0.
-    expect(rendered).not.toContain(t('usageUsed'))
-    expect(rendered).toContain(t('accountCycleUncapped'))
+    // The upstream never reported a cache figure, so a 0% would be a claim: the
+    // meta line carries no cache segment at all.
+    expect(rendered).not.toContain(t('accountMetaCache', { percent: '0.0%' }))
+    // No used figure was reported, so no used segment either.
+    expect(rendered).not.toContain(t('accountMetaUsed', { used: '0' }))
+    // No cap was declared, so the balance is stated alone rather than '/ 0'.
+    expect(rendered).toContain(t('accountMetaRemaining', { remaining: '500' }))
   })
 
   it('renames an account inline, from the menu entry of the row it belongs to', async () => {
@@ -980,19 +970,20 @@ describe('WorkBuddy settings page', () => {
       .map(node => (node.textContent ?? '').trim())
     // 1,000 for the CN account and 50 for the international one — reported
     // side by side, never added.
-    expect(leaves).toContain('1,000')
-    expect(leaves).toContain('50')
-    expect(leaves).not.toContain('1,050')
+    expect(leaves).toContain(t('accountMetaRemaining', { remaining: '1,000' }))
+    expect(leaves).toContain(t('accountMetaRemaining', { remaining: '50' }))
+    expect(leaves).not.toContain(t('accountMetaRemaining', { remaining: '1,050' }))
   })
 
-  it('routes each merged row\'s action to its own product', async () => {
+  it('routes each row\'s action to its own product', async () => {
     await mount()
-    await expandAccountRows()
-    // The rows are interleaved by product now, so the second Test button is the
-    // international account's; its request must go to the international route.
-    const test = buttons().filter(button => button.label === t('accountTest'))
-    expect(test).toHaveLength(2)
-    await act(async () => { test[1]?.node.click(); await Promise.resolve() })
+    // One kebab per account, and the second row belongs to the international
+    // pool: its Test must reach that product's route with that account's id.
+    expect(accountMenus()).toHaveLength(2)
+    await openAccountMenu(1)
+    const testRow = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')]
+      .find(row => row.textContent === t('accountTest')) as HTMLButtonElement | undefined
+    await act(async () => { testRow?.click(); await Promise.resolve() })
     const call = posted().find(entry => entry.body['action'] === 'test')
     expect(call?.url).toBe(AI_CARD_VARIANT.accountPath)
     expect(call?.body['id']).toBe('ai:ent')

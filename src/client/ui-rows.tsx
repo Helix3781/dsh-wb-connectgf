@@ -18,6 +18,7 @@
  */
 
 import type { CSSProperties, ReactNode } from 'react'
+import { StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** Join class names, dropping the empty ones. */
 export function cx(...values: readonly (string | undefined | false)[]): string {
@@ -78,49 +79,34 @@ export function SettingsGroup({ title, action, description, children }: {
   )
 }
 
-/**
- * A collapsible group: the heading is the button, the chevron shows the state.
- *
- * Used for the parts of the page a reader checks rarely, so the default view
- * stays the one thing they came for.
- */
-export function Disclosure({ title, description, open, onToggle, children }: {
-  title: string
-  description?: ReactNode
-  open: boolean
-  onToggle(): void
-  children: ReactNode
-}): ReactNode {
-  return (
-    <section className="wbp-group">
-      <button type="button" className="wbp-disclosure" aria-expanded={open} onClick={onToggle}>
-        <span className="wbp-groupHead">
-          <span className={cx('wbp-chevron', open && 'wbp-chevronUp')} aria-hidden="true" />
-          <span className="wbp-groupTitle">{title}</span>
-        </span>
-      </button>
-      {description === undefined ? null : <p className="wbp-groupDesc">{description}</p>}
-      {open ? <div className="wbp-rows">{children}</div> : null}
-    </section>
-  )
-}
 
-/** A capsule tag. */
+/**
+ * A capsule tag, drawn by the platform's own `Tag`.
+ *
+ * This used to be a local `<span>` with four hand-painted palettes. The
+ * platform atom already ships exactly these capsules (`outline`, `neutral`,
+ * tinted `success` / `warning` / `danger`), so delegating keeps the pills the
+ * same width, weight and tone as the tags elsewhere in the settings surface —
+ * and removes a palette that could drift out of the theme on its own.
+ *
+ * The tone names are this plugin's (`plain`/`muted`/`warn`/`error`/`ok`)
+ * because they say what the caller MEANS; the mapping below is the one place
+ * that translates them into the platform's vocabulary.
+ */
 export function Badge({ tone = 'plain', title, children }: {
   tone?: 'plain' | 'muted' | 'warn' | 'error' | 'ok'
   title?: string
   children: ReactNode
 }): ReactNode {
-  const cls = tone === 'muted'
-    ? 'wbp-badgeMuted'
+  const mapped = tone === 'muted'
+    ? 'outline'
     : tone === 'warn'
-      ? cx('wbp-badge', 'wbp-badgeWarn')
+      ? 'warning'
       : tone === 'error'
-        ? cx('wbp-badge', 'wbp-badgeError')
-        : tone === 'ok'
-          ? cx('wbp-badge', 'wbp-badgeOk')
-          : 'wbp-badge'
-  return <span className={cls} title={title}>{children}</span>
+        ? 'danger'
+        : tone === 'ok' ? 'success' : 'neutral'
+  const tag = <Tag tone={mapped}>{children}</Tag>
+  return title === undefined ? tag : <span title={title}>{tag}</span>
 }
 
 /** A labelled figure in a filled panel — the dashboard's stat unit. */
@@ -134,45 +120,22 @@ export function StatTile({ label, value, sub }: { label: string, value: string, 
   )
 }
 
-/**
- * A labelled bar: a head line carrying the label and the figures, then the
- * full-width fill and an optional reset line.
- *
- * `percent` is the caption (it may say "unlimited"); `barPercent` is what the
- * fill is drawn from, and caps at 100 independently so a bar can be full while
- * its caption states the real number.
- */
-export function QuotaBar({ label, value, percent, barPercent, warn, resetsAt, resetsLabel }: {
-  label: string
-  value?: string
-  percent?: string
-  barPercent: number
-  warn?: string
-  resetsAt?: string
-  resetsLabel?: string
-}): ReactNode {
-  const clamped = Math.min(100, Math.max(0, barPercent))
-  const warnText = warn ?? ''
-  return (
-    <div className="wbp-window">
-      <div className="wbp-windowHead">
-        <span className="wbp-windowLabel">{label}</span>
-        {warnText === '' ? null : <span className="wbp-warnTag">{warnText}</span>}
-        <span className="wbp-spacer" />
-        {value === undefined || value === '' ? null : <span className="wbp-windowValue">{value}</span>}
-        {percent === undefined ? null : <span className="wbp-windowPct">{percent}</span>}
-      </div>
-      <div className="wbp-bar" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={clamped}>
-        <div className={warnText === '' ? 'wbp-barFill' : cx('wbp-barFill', 'wbp-barFillWarn')} style={{ width: `${String(clamped)}%` }} />
-      </div>
-      {resetsAt === undefined || resetsAt === '' ? null : <p className="wbp-windowReset">{resetsLabel ?? ''} {resetsAt}</p>}
-    </div>
-  )
-}
 
-/** One account's status dot. The colour is the class; the meaning is the title. */
+/**
+ * One account's status dot, drawn by the platform's own `StateDot`.
+ *
+ * The plugin used to paint its own 8px circle here, which meant a hand-rolled
+ * palette that had to be kept in step with the harness by hand. `StateDot` is
+ * the atom the rest of the settings surfaces use, so the row's mark is the
+ * same mark the session list and the job list draw.
+ *
+ * The mapping is the platform's vocabulary, not this plugin's: an available
+ * account is `done`, a benched one `warning`, a refused one `error`, and a
+ * switched-off one `idle`.
+ */
 export function StatusDot({ tone, title }: { tone: 'ok' | 'warn' | 'error' | 'off', title: string }): ReactNode {
-  return <span aria-hidden="true" className={cx('wbp-tabDot', `wbp-tabDot${tone === 'ok' ? 'Ok' : tone === 'warn' ? 'Warn' : tone === 'error' ? 'Error' : 'Off'}`)} title={title} />
+  const state = tone === 'ok' ? 'done' : tone === 'warn' ? 'warning' : tone === 'error' ? 'error' : 'idle'
+  return <span title={title}><StateDot state={state} /></span>
 }
 
 /**
@@ -250,28 +213,6 @@ export function SegmentedField({ label, value, options, disabled, onChange, clas
   )
 }
 
-/** A labelled checkbox row: the box, then its name. */
-export function CheckRow({ id, checked, disabled, label, onChange }: {
-  id: string
-  checked: boolean
-  disabled?: boolean
-  label: string
-  onChange(checked: boolean): void
-}): ReactNode {
-  return (
-    <label className="wbp-checkRow" htmlFor={id}>
-      <input
-        id={id}
-        className="wbp-check"
-        type="checkbox"
-        checked={checked}
-        disabled={disabled === true}
-        onChange={event => { onChange(event.target.checked) }}
-      />
-      <span className="wbp-checkName">{label}</span>
-    </label>
-  )
-}
 
 /** A switch row: the platform Switch's shape, as a labelled control. */
 export function ToggleField({ id, checked, disabled, label, onChange }: {

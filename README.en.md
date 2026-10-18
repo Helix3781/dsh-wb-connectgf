@@ -6,7 +6,7 @@
 
 **A Functy fork of corrinehu/dsh-workbuddy-connect: dashboard UI, multi-account rotation and credit in the sidebar, bringing WorkBuddy desktop-app models into DeepSeek Harness.**
 
-[![dsh-workbuddy-connect-functy](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.11-4F46E5)](https://github.com/functy23/dsh-workbuddy-connect-functy)
+[![dsh-workbuddy-connect-functy](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.14-4F46E5)](https://github.com/functy23/dsh-workbuddy-connect-functy)
 [![Language](https://img.shields.io/badge/language-TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Top Language](https://img.shields.io/github/languages/top/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/functy23/dsh-workbuddy-connect-functy)
@@ -24,20 +24,20 @@
 
 ---
 
-This is a fork of [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect), not the upstream project. The upstream npm package is still `dsh-workbuddy-connect` (currently `0.7.1`, DSH `0.2.0-rc.2` only). This repository publishes as **`dsh-workbuddy-connect-functy`**, with a different UI and account model.
+This is a fork of [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect), not the upstream project. The upstream npm package is still `dsh-workbuddy-connect` (currently `0.7.8`, DSH `0.2.1-rc.2` only). This repository publishes as **`dsh-workbuddy-connect-functy`**, with a different UI and account model.
 
 Both the CN **WorkBuddy** app and the international **WorkBuddy AI** app are supported: whichever you have installed shows up as its own model group; both installed shows both, each with its own account and credit.
 
 ## How this fork differs
 
-Compared with upstream **0.7.1** (2026-10-01). Features both trees share are not listed as ours.
+Compared with upstream **0.7.8** (2026-10-17). Features both trees share are not listed as ours.
 
-| | Upstream `dsh-workbuddy-connect` 0.7.1 | This tree 0.13.11 |
+| | Upstream `dsh-workbuddy-connect` 0.7.8 | This tree 0.13.14 |
 |---|---|---|
-| UI | two legacy plugin cards in Settings | sidebar credit card + centre dashboard + settings section page |
-| Accounts | follows the desktop app's current sign-in | multi-account pool: rotation, QR, token, desktop adopt; a removed account is not swept back in |
-| Credit | on the settings card only | in the sidebar, remaining or used/total, can be hidden |
-| DSH | **`0.2.0-rc.2` only** | `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2` |
+| UI | two legacy plugin cards in Settings | sidebar credit card + centre dashboard + settings section page (accounts merged into one card per product; balance / used / tokens / reset sit on the line under each name) |
+| Accounts | follows the desktop app's current sign-in | multi-account pool: rotation, QR, token, desktop adopt; a removed account is not swept back in; one card per product instead of one card per account |
+| Credit | on the settings card only | in the sidebar, remaining or used/total, can be hidden; each account row also states used, requests, tokens and when the allowance returns |
+| DSH | **`0.2.0-rc.2` only** | `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-rc.2` |
 | Update notice | bottom-right reminder | not ported |
 | npm | `dsh-workbuddy-connect` | `dsh-workbuddy-connect-functy` |
 
@@ -75,7 +75,7 @@ Choose which models appear in the picker:
 
 Prerequisite: the WorkBuddy desktop app is installed and signed in (same for WorkBuddy AI). A mismatched DSH core fails to start.
 
-**This release (`0.13.11`)** targets DSH `0.1.7-alpha.1`, `0.2.0-rc.1` and `0.2.0-rc.2`. Newer prereleases (e.g. `0.2.1-rc.x`) are not covered automatically.
+**This release (`0.13.14`)** targets DSH `0.1.7-alpha.1`, `0.2.0-rc.1`, `0.2.0-rc.2` and `0.2.1-rc.2`. Later prereleases are not covered automatically.
 
 > **Do not install npm's `dsh-workbuddy-connect`.** That is the upstream package, a different code line.
 
@@ -152,7 +152,7 @@ CN by default; add `--provider workbuddy-ai` for the international product. `acc
 
 ## Known limitations
 
-- Verified on macOS Web / Desktop (DSH `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2`, Node 22+). Windows probes Local then Roaming AppData; WSL reads the mounted Windows profile first. If user names differ, set `WORKBUDDY_AUTH_FILE` / `WORKBUDDY_AI_AUTH_FILE`.
+- Verified on macOS Web / Desktop (DSH `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-rc.2`, Node 22+). Windows probes Local then Roaming AppData; WSL reads the mounted Windows profile first. If user names differ, set `WORKBUDDY_AUTH_FILE` / `WORKBUDDY_AI_AUTH_FILE`.
 - Sidebar display preferences need a host that can write settings; missing fields mean no switch is drawn.
 - The international catalog comes from the app's own interface and can break; the plugin then degrades to the last successful catalog, then the built-in roster.
 - International enterprise billing is unverified; a product with no credential no longer shows a model group.

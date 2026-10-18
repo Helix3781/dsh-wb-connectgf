@@ -6,7 +6,7 @@
 
 **corrinehu/dsh-workbuddy-connect 的 Functy 分支：仪表盘界面、多账号轮换与额度展示，把 WorkBuddy 桌面 App 的模型接到 DeepSeek Harness。**
 
-[![dsh-workbuddy-connect-functy](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.11-4F46E5)](https://github.com/functy23/dsh-workbuddy-connect-functy)
+[![dsh-workbuddy-connect-functy](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.14-4F46E5)](https://github.com/functy23/dsh-workbuddy-connect-functy)
 [![Language](https://img.shields.io/badge/language-TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Top Language](https://img.shields.io/github/languages/top/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/functy23/dsh-workbuddy-connect-functy)
@@ -24,20 +24,20 @@
 
 ---
 
-这是 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) 的分支，不是上游本体。上游 npm 包仍叫 `dsh-workbuddy-connect`（当前 `0.7.1`，只认 DSH `0.2.0-rc.2`）。本仓库发在 **`dsh-workbuddy-connect-functy`**，界面和账号模型都走了另一条线。
+这是 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) 的分支，不是上游本体。上游 npm 包仍叫 `dsh-workbuddy-connect`（当前 `0.7.8`，只认 DSH `0.2.1-rc.2`）。本仓库发在 **`dsh-workbuddy-connect-functy`**，界面和账号模型都走了另一条线。
 
 国内版 **WorkBuddy** 与国际版 **WorkBuddy AI** 同时支持：装哪个 App 就出现哪个模型分组，两个都装就两组并存，各自用自己的账号与积分。
 
 ## 和上游差在哪
 
-对照上游稳定版 **0.7.1**（2026-10-01）。两边都有的不写进「本仓库才有」。
+对照上游稳定版 **0.7.8**（2026-10-17）。两边都有的不写进「本仓库才有」。
 
-| | 上游 `dsh-workbuddy-connect` 0.7.1 | 本仓库 0.13.11 |
+| | 上游 `dsh-workbuddy-connect` 0.7.8 | 本仓库 0.13.14 |
 |---|---|---|
-| 界面 | 设置里两张旧插件卡片 | 侧栏额度卡 + 中栏仪表盘 + 设置分区页 |
-| 账号 | 跟桌面 App 当前这一份登录 | 多账号池：轮换、扫码、令牌、桌面凭证；删除后不会被 30 秒扫描加回来 |
-| 额度 | 只在设置卡片上 | 侧栏一眼可见，可切「剩余 / 用量」样式，可关掉 |
-| DSH | **只** `0.2.0-rc.2` | `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2` |
+| 界面 | 设置里两张旧插件卡片 | 侧栏额度卡 + 中栏仪表盘 + 设置分区页（账号按产品合并成卡片，额度/用量/token/恢复时间都在名字下一行） |
+| 账号 | 跟桌面 App 当前这一份登录 | 多账号池：轮换、扫码、令牌、桌面凭证；删除后不会被 30 秒扫描加回来；同一产品的账号合并在一张卡片里 |
+| 额度 | 只在设置卡片上 | 侧栏一眼可见，可切「剩余 / 用量」样式，可关掉；设置页每账号显示剩余 / 已用 / 请求数 / token / 恢复时间 |
+| DSH | **只** `0.2.0-rc.2` | `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-rc.2` |
 | 更新提醒 | 右下角更新条 | 无（未移植） |
 | npm | `dsh-workbuddy-connect` | `dsh-workbuddy-connect-functy` |
 
@@ -75,7 +75,7 @@
 
 前置：已安装并登录 WorkBuddy 桌面 App（国际版同理）。核心必须对上，否则 DSH 起不来。
 
-**本版 `0.13.11`** 面向 DSH `0.1.7-alpha.1`、`0.2.0-rc.1`、`0.2.0-rc.2`。更新的 prerelease（如 `0.2.1-rc.x`）不会自动覆盖。
+**本版 `0.13.14`** 面向 DSH `0.1.7-alpha.1`、`0.2.0-rc.1`、`0.2.0-rc.2`、`0.2.1-rc.2`。再往后的 prerelease 不会自动覆盖。
 
 > **不要装 npm 上的 `dsh-workbuddy-connect`。** 那是上游包，和本仓库不是同一条线。
 
@@ -152,7 +152,7 @@ dsh plugin --profile <profile> exec dsh-workbuddy-connect doctor
 
 ## 已知限制
 
-- 在 macOS 的 Web / Desktop 下验证过（DSH `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2`，Node 22+）。Windows 依次探 Local 与 Roaming AppData；WSL 优先读挂载的 Windows 用户目录。用户名不一致时用 `WORKBUDDY_AUTH_FILE` / `WORKBUDDY_AI_AUTH_FILE`。
+- 在 macOS 的 Web / Desktop 下验证过（DSH `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-rc.2`，Node 22+）。Windows 依次探 Local 与 Roaming AppData；WSL 优先读挂载的 Windows 用户目录。用户名不一致时用 `WORKBUDDY_AUTH_FILE` / `WORKBUDDY_AI_AUTH_FILE`。
 - 侧栏两个显示偏好要宿主能写设置；状态文档没有对应字段时，设置页不画开关。
 - 国际版模型目录来自 App 界面接口，属私有实现，可能失效；届时按「本账号上次成功目录 → 内置目录」降级。
 - 国际版企业计费未验证；无凭据时该版模型分组不再显示。

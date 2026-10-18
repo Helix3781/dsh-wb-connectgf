@@ -68,11 +68,16 @@ export default [
     clean: true,
     define: VERSION_DEFINE,
     deps: {
+      // The official helper ships INSIDE this bundle. Importing it from the host
+      // bets on a package the Desktop runtime references but does not expose on
+      // a plugin's resolution path (upstream's 0.7.6 died with
+      // ERR_MODULE_NOT_FOUND on exactly this import), so it is inlined instead
+      // of declared as a peer.
+      alwaysBundle: ['@deepseek-ai/dsh-atomic-write'],
       neverBundle: [
         '@earendil-works/pi-ai',
         '@deepseek-ai/schemastery',
         '@deepseek-ai/cordis',
-        '@deepseek-ai/dsh-atomic-write',
         '@deepseek-ai/dsh-attachment',
         '@deepseek-ai/dsh-home-paths',
         '@deepseek-ai/dsh-host-webserver',

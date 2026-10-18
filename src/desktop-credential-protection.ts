@@ -555,6 +555,10 @@ export function workBuddyWindowsDiscoveryTools(): WorkBuddyWindowsDiscoveryTools
       maxBuffer: WINDOWS_REGISTRY_OUTPUT_MAX_BYTES,
       timeout: WORKBUDDY_DISCOVERY_STEP_TIMEOUT_MS,
       windowsHide: true,
+      // Bytes, not text: reg.exe speaks the console OEM code page, and the
+      // missing-key diagnostic has to be classified from its actual encoding
+      // (see {@link windowsRegistryKeyMissingFromBytes}).
+      encoding: 'buffer',
     }, (error, stdout, stderr) => {
       if (settled) return
       settled = true
@@ -563,14 +567,14 @@ export function workBuddyWindowsDiscoveryTools(): WorkBuddyWindowsDiscoveryTools
       // failure stays incomplete rather than becoming "not installed".
       if (error !== null && error !== undefined) {
         if (error.killed !== true && (error.code === 1 || error.code === '1')
-          && windowsRegistryKeyMissing(stderr)) {
+          && windowsRegistryKeyMissingFromBytes(stderr)) {
           resolve('')
           return
         }
         reject(new DiscoveryIncompleteError(`reg.exe could not complete (${error.killed === true ? 'timed out' : String(error.code ?? 'unavailable')})`))
         return
       }
-      resolve(stdout)
+      resolve(stdout.toString('utf8'))
     })
     const abort = (): void => {
       if (settled) return
@@ -978,6 +982,29 @@ function windowsRegistryKeyMissing(stderr: string): boolean {
   const detail = stderr.trim()
   return /^ERROR:\s*The system was unable to find the specified registry key or value\.?$/iu.test(detail)
     || /^错误[:：]\s*系统找不到指定的注册表项或值[。.]?$/u.test(detail)
+}
+
+/**
+ * Classify `reg query`'s stderr from its BYTES.
+ *
+ * Reg.exe speaks the console OEM code page, not UTF-8: on a zh-CN install the
+ * missing-key diagnostic arrives as cp936 (GBK) bytes, which UTF-8 decoding
+ * turns into mojibake no diagnostic regex can match — every absent root then
+ * reads as "discovery incomplete" on a Chinese-locale Windows. The bytes
+ * decide, so decode as UTF-8 first and then as GBK. ASCII — every English
+ * diagnostic — is identical under both, so a match is unambiguous and
+ * recognition only ever widens; a genuine failure (access denied, unknown
+ * output) still stays incomplete in either decode.
+ */
+function windowsRegistryKeyMissingFromBytes(stderr: Uint8Array | string): boolean {
+  if (typeof stderr === 'string') return windowsRegistryKeyMissing(stderr)
+  if (windowsRegistryKeyMissing(Buffer.from(stderr).toString('utf8'))) return true
+  try {
+    return windowsRegistryKeyMissing(new TextDecoder('gbk').decode(stderr))
+  } catch {
+    // A runtime without full ICU cannot decode GBK; stay with UTF-8 only.
+    return false
+  }
 }
 
 /**

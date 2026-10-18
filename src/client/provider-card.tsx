@@ -27,8 +27,10 @@ import type { WorkBuddyWebStatus } from '../status-paths.ts'
 import { CARD_VARIANTS } from './card-variants.ts'
 import type { WorkBuddyCardVariant } from './card-variants.ts'
 import { readWorkBuddyStatus } from './status-document.ts'
+import { accountSummaryMeta, accountSummaryState } from './account-summary.ts'
+import type { AccountSummaryCopy } from './account-summary.ts'
 import { ActionButton } from './ui-button.tsx'
-import { Badge, StatTile, StatusDot } from './ui-rows.tsx'
+import { StatTile, StatusDot } from './ui-rows.tsx'
 import type { WorkBuddyTranslate } from './locales.ts'
 
 /** Owner share of one provider-card occurrence, as the Models page supplies it. */
@@ -56,6 +58,33 @@ export interface WorkBuddyProviderCardProps extends Partial<ProviderCardOwnerPro
 
 /** How often the card re-reads its product while it is on screen. */
 const REFRESH_INTERVAL_MS = 30_000
+/**
+ * Bind this card's dictionary to the shared account-summary words.
+ *
+ * The provider card states the same facts as the accounts page, so it reuses
+ * the same projection; only the wording comes from this namespace.
+ */
+function summaryCopy(t: WorkBuddyTranslate): AccountSummaryCopy {
+  return {
+    disabled: t('accountStateDisabled'),
+    sessionDead: t('accountStateSessionDead'),
+    exhausted: t('accountStateExhausted'),
+    limited: t('accountStateLimited'),
+    expired: t('accountExpired'),
+    creditsFailed: t('accountCreditsFailed'),
+    creditsPending: t('accountCreditsPending'),
+    remainingOf: ({ remaining, total }) => t('accountMetaRemainingOf', { remaining, total }),
+    remaining: ({ remaining }) => t('accountMetaRemaining', { remaining }),
+    used: ({ used }) => t('accountMetaUsed', { used }),
+    requests: ({ count }) => t('accountMetaRequests', { count }),
+    inputTokens: ({ value }) => t('accountMetaInputTokens', { value }),
+    outputTokens: ({ value }) => t('accountMetaOutputTokens', { value }),
+    cache: ({ percent }) => t('accountMetaCache', { percent }),
+    resets: ({ when }) => t('accountMetaResets', { when }),
+    tokenExpires: ({ when }) => t('accountMetaTokenExpires', { when }),
+    wait: ({ value, unit }) => t(unit === 'hour' ? 'waitHours' : 'waitMinutes', { value }),
+  }
+}
 
 /**
  * Which variant this occurrence belongs to.
@@ -146,23 +175,23 @@ export function WorkBuddyProviderCard(props: WorkBuddyProviderCardProps): ReactN
         <p className="wbp-hint">{t('accountEmpty')}</p>
       ) : (
         <div className="wbp-accountList">
-          {accounts.map(account => (
-            <div className="wbp-modelRow" key={account.id}>
-              <StatusDot
-                tone={account.enabled !== true
-                  ? 'off'
-                  : account.sessionDead === true
-                    ? 'error'
-                    : account.available ? 'ok' : 'warn'}
-                title={account.available ? t('accountStateReady') : t('accountStateLimited')}
-              />
-              <span className="wbp-modelName" title={account.name}>{account.name}</span>
-              <span className="wbp-spacer" />
-              {account.credits === undefined
-                ? <span className="wbp-hint">{t('accountCreditsPending')}</span>
-                : <Badge>{t('accountCredits', { total: new Intl.NumberFormat(undefined).format(account.credits) })}</Badge>}
-            </div>
-          ))}
+          {accounts.map(account => {
+            const copy = summaryCopy(t)
+            const state = accountSummaryState(account, Date.now(), copy)
+            return (
+              <div className="wbp-accountRow" key={account.id}>
+                <div className="wbp-accountHead">
+                  <StatusDot tone={state.tone} title={state.text === '' ? t('accountStateReady') : state.text} />
+                  <span className="wbp-accountName" title={account.name}>{account.name}</span>
+                  {state.text === '' ? null : <span className="wbp-usagePlanStatus">{state.text}</span>}
+                </div>
+                {/* The same grey line the accounts page states, from the same
+                    projection: the two surfaces cannot describe one account
+                    differently. */}
+                <p className="wbp-accountMeta">{accountSummaryMeta(account, Date.now(), copy)}</p>
+              </div>
+            )
+          })}
         </div>
       )}
 

@@ -64,6 +64,8 @@ import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { openExternalLink } from './open-external.ts'
 import type { WorkBuddyExternalOpenOptions } from './open-external.ts'
 import { ModelPicker, selectableModels } from './model-picker.tsx'
+import { accountSummaryMeta, accountSummaryState, formatCredit, shortTokens } from './account-summary.ts'
+import type { AccountSummaryCopy } from './account-summary.ts'
 import { ActionButton } from './ui-button.tsx'
 import {
   Badge,
@@ -72,7 +74,6 @@ import {
   SegmentedField,
   SettingRow,
   SettingsGroup,
-  StatTile,
   StatusDot,
   ToggleField,
   cx,
@@ -82,6 +83,34 @@ import type { WorkBuddySettingsKey } from './locales.ts'
 
 /** Copy function injected by the client registration. */
 type Translate = (key: WorkBuddySettingsKey, params?: Record<string, unknown>) => string
+/**
+ * Bind one surface's dictionary to the shared account-summary words.
+ *
+ * The summary module owns WHICH facts a row states and in what order; the
+ * dictionary owns how each is worded. This is the one place the two meet, so a
+ * second surface reuses the same facts without copying the formatting.
+ */
+function accountSummaryCopy(t: Translate): AccountSummaryCopy {
+  return {
+    disabled: t('accountStateDisabled'),
+    sessionDead: t('accountStateSessionDead'),
+    exhausted: t('accountStateExhausted'),
+    limited: t('accountStateLimited'),
+    expired: t('accountExpired'),
+    creditsFailed: t('accountCreditsFailed'),
+    creditsPending: t('accountCreditsPending'),
+    remainingOf: ({ remaining, total }) => t('accountMetaRemainingOf', { remaining, total }),
+    remaining: ({ remaining }) => t('accountMetaRemaining', { remaining }),
+    used: ({ used }) => t('accountMetaUsed', { used }),
+    requests: ({ count }) => t('accountMetaRequests', { count }),
+    inputTokens: ({ value }) => t('accountMetaInputTokens', { value }),
+    outputTokens: ({ value }) => t('accountMetaOutputTokens', { value }),
+    cache: ({ percent }) => t('accountMetaCache', { percent }),
+    resets: ({ when }) => t('accountMetaResets', { when }),
+    tokenExpires: ({ when }) => t('accountMetaTokenExpires', { when }),
+    wait: ({ value, unit }) => t(unit === 'hour' ? 'waitHours' : 'waitMinutes', { value }),
+  }
+}
 
 /** How often a QR challenge is checked. */
 const POLL_INTERVAL_MS = 2_000
@@ -206,94 +235,35 @@ function QrCanvas({ text, modulePixels }: { text: string, modulePixels: number }
   }, [text, modulePixels])
   return <canvas ref={ref} role="img" aria-label="QR" style={{ display: 'block' }} />
 }
-
 /**
- * What rotation thinks of this account right now, as a dot tone and one line of
- * copy.
+ * One pooled account, as one row inside its product's card.
  *
- * The state is computed once and read twice (the dot and the head line), so the
- * two can never disagree about whether an account is benched.
+ * The row is deliberately flat: a status dot, the account's name, and ONE grey
+ * line of small text under it carrying the facts a reader checks at a glance —
+ * what is left, what this cycle consumed, what this plugin has sent through the
+ * account, and when the allowance returns. There is no disclosure: every figure
+ * used to sit behind a chevron, which turned a page about balances into a list
+ * of names with the balances hidden. Anything that is a DECISION (enable, test,
+ * rename, remove) lives in the ⋮ menu instead, so nothing in the row has to be
+ * expanded to be acted on.
+ *
+ * The meta line omits what is unknown rather than printing a zero: "the
+ * upstream did not report this" and "this is zero" are different answers, and
+ * the second one is the kind of wrong-but-plausible figure a reader acts on.
  */
-function accountState(account: WorkBuddyWebAccount, now: number, t: Translate): {
-  tone: 'ok' | 'warn' | 'error' | 'off'
-  text: string
-} {
-  if (account.enabled !== true) return { tone: 'off', text: t('accountStateDisabled') }
-  if (account.sessionDead === true) return { tone: 'error', text: t('accountStateSessionDead') }
-  const cooldown = account.cooldown
-  if (cooldown !== undefined && cooldown.untilMs > now) {
-    return {
-      tone: 'warn',
-      text: t('accountStateWaiting', {
-        reason: t(cooldown.reason === 'credit' ? 'accountStateExhausted' : cooldown.reason === 'session' ? 'accountStateSessionDead' : 'accountStateLimited'),
-        when: waitLabel(cooldown.untilMs, now, t),
-      }),
-    }
-  }
-  // An expired pasted token is the one state the user must act on, and it is
-  // indistinguishable from an idle account unless it is named.
-  if (account.expiresAtMs > 0 && account.expiresAtMs <= now && account.renewable !== true) {
-    return { tone: 'error', text: t('accountExpired') }
-  }
-  return { tone: 'ok', text: t('accountStateReady') }
-}
-
-/**
- * One account row — a straight port of the reference implementation's
- * `AccountItem` (`src/client/section.tsx` of dsh-commandcode-provider),
- * structure, class names and all.
- *
- * What was kept identical, because it is what the row IS:
- *
- * - the head line is a disclosure button carrying the status dot, the name, the
- *   quieter identity chips (upstream account name, plan/state chip, warn/error
- *   chips), a spacer, and the chevron — then the ⋮ `Menu` trigger beside it;
- * - the meters row (`MiniMeter` / `MonthlyBalance` shapes) sits directly
- *   under the head, outside the disclosure: a limit's fill and its reset are
- *   what the user checks at a glance, so they must not be behind a click;
- * - the ⋮ menu's rows come from one `MenuEntry[]` built in place, with
- *   separators before the edit group and before the destructive one;
- * - the three inline modes (key/rename/remove) are inline blocks inside the row
- *   — `InlineInput` as a bordered field, `ConfirmBar` as an error-edged
- *   panel — never a browser dialog.
- *
- * What had to differ, because WorkBuddy's data model is not Command Code's:
- *
- * - there is no per-account "not configured" state (an account exists only once
- *   it has a credential), so the reference's API-key setup block is absent;
- * - there is no pin/unpin (the pool's primary account is the desktop app's, not
- *   a user choice), so those two menu rows are absent;
- * - one upstream window exists (a cycle balance with an optional cap) rather
- *   than Command Code's five-hour/weekly/monthly trio, and a pasted token that
- *   lapsed is the other state worth a chip.
- */
-function AccountRow({ account, product, busy, now, t, onAction }: {
+function AccountRow({ account, busy, now, t, onAction }: {
   account: WorkBuddyWebAccount
-  /** Which product this account belongs to, as its chip label. */
-  product: string
   busy: boolean
   now: number
   t: Translate
   onAction: (action: WorkBuddyAccountAction) => void
 }): React.ReactNode {
-  const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  /** The inline editor this row has open, if any (the reference's `mode`). */
+  /** The inline editor this row has open, if any. */
   const [mode, setMode] = useState<'rename' | 'remove' | undefined>(undefined)
   const [label, setLabel] = useState('')
-  const { tone, text: stateLabel } = accountState(account, now, t)
-  const stateDetail = account.cooldown === undefined || account.cooldown.untilMs <= now
-    ? stateLabel
-    : `${stateLabel} · ${t('accountStrikes', { count: account.cooldown.strikes })}`
-  /** The account's own name from the upstream, when it differs from the label. */
-  const upstreamName = account.nickname ?? ''
-  const creditValue = account.credits === undefined
-    ? undefined
-    : new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
-  const cap = account.creditsTotal
-  const ratio = account.credits === undefined || cap === undefined || cap <= 0
-    ? undefined
-    : Math.min(1, Math.max(0, account.credits / cap))
+  const copy = accountSummaryCopy(t)
+  const { tone, text: stateLabel } = accountSummaryState(account, now, copy)
 
   const items: MenuEntry[] = [
     {
@@ -319,40 +289,14 @@ function AccountRow({ account, product, busy, now, t, onAction }: {
       setMode('rename')
     } else if (id === 'remove') setMode('remove')
   }
+
   return (
-    <div className={cx('wbp-accountItem', account.enabled === true && tone === 'ok' && 'wbp-accountItemActive')}>
+    <div className={cx('wbp-accountRow', account.enabled === true && tone === 'ok' && 'wbp-accountRowActive')}>
       <div className="wbp-accountHead">
-        <button
-          type="button"
-          className="wbp-accountToggle"
-          aria-expanded={expanded}
-          aria-controls={`wbp-account-${account.id}-details`}
-          onClick={() => { setExpanded(value => !value) }}
-        >
-          <StatusDot tone={tone} title={stateLabel} />
-          <span className="wbp-accountName" title={account.name}>{account.name}</span>
-          {upstreamName === '' || upstreamName === account.name ? null : (
-            <span className="wbp-accountProduct" title={upstreamName}>{upstreamName}</span>
-          )}
-          {/*
-            * The product, as a plan-style chip: the reference puts the upstream
-            * plan there, and the product is WorkBuddy's equivalent fact — the one
-            * thing about a row that must not be inferred, because the two
-            * products' credits are not convertible and their accounts are not
-            * interchangeable.
-            */}
-          <span className="wbp-usagePlan">{product}</span>
-          {/*
-            * The account's state, in the head line: a benching's remaining wait
-            * is the figure that decides whether the account serves the next
-            * message, so it belongs where the eye lands, not behind a
-            * disclosure — and it is error-coloured, as the reference colours its
-            * rate-limit and invalid-key marks.
-            */}
-          {tone === 'ok' ? null : <span className="wbp-usagePlanStatus">{stateLabel}</span>}
-          <span className="wbp-spacer" />
-          <span className={cx('wbp-chevron', expanded && 'wbp-chevronUp')} aria-hidden="true" />
-        </button>
+        <StatusDot tone={tone} title={stateLabel} />
+        <span className="wbp-accountName" title={account.name}>{account.name}</span>
+        {tone === 'ok' ? null : <span className="wbp-usagePlanStatus">{stateLabel}</span>}
+        <span className="wbp-spacer" />
         <Menu
           open={menuOpen}
           onClose={() => { setMenuOpen(false) }}
@@ -364,7 +308,7 @@ function AccountRow({ account, product, busy, now, t, onAction }: {
             <button
               type="button"
               className="wbp-iconButton"
-              aria-label={`${account.name} — ${t('accountActions')}`}
+              aria-label={ `${account.name} — ${t('accountActions')}` }
               title={t('accountActions')}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
@@ -377,156 +321,12 @@ function AccountRow({ account, product, busy, now, t, onAction }: {
       </div>
 
       {/*
-        * The meters, outside the disclosure: the reference's MiniMeter row (its
-        * five-hour and weekly fills) reduced to the one window this upstream
-        * publishes — a cycle balance and the cap it is drawn against. The fill is
-        * omitted when no cap was declared, because a bar over an unknown total is
-        * a guess dressed as a measurement.
+        * The grey line under the name: one string built from the pieces that are
+        * actually known, so a row with no balance still states its requests and
+        * its reset instead of rendering an empty second line.
         */}
-      {account.credits === undefined ? null : (
-        <div className="wbp-accountMeters">
-          <span className="wbp-miniMeter">
-            <span className="wbp-miniMeterLabel">{t('accountCycleBalance')}</span>
-            {ratio === undefined ? null : (
-              <span className="wbp-miniMeterTrack" role="progressbar" aria-label={t('accountCycleBalance')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(ratio * 100)}>
-                <span
-                  className={account.credits <= 0 ? 'wbp-miniMeterFill wbp-miniMeterFillWarn' : 'wbp-miniMeterFill'}
-                  style={{ width: `${String(Math.round(ratio * 100))}%` }}
-                />
-              </span>
-            )}
-            <span className="wbp-miniMeterValue">
-              {cap === undefined
-                ? creditValue?.format(account.credits)
-                : `${creditValue?.format(account.credits) ?? ''} / ${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(cap)}`}
-            </span>
-          </span>
-        </div>
-      )}
+      <p className="wbp-accountMeta">{accountSummaryMeta(account, now, copy)}</p>
 
-      {!expanded ? null : (
-        <div id={`wbp-account-${account.id}-details`} className="wbp-accountDetails">
-          <div className="wbp-factRow">
-            <Fact label={t('accountBalance')} value={
-              account.credits === undefined
-                ? t('accountCreditsPending')
-                : t('accountCredits', { total: new Intl.NumberFormat(undefined).format(account.credits) })
-            } />
-            <Fact label={t('accountStatus')} value={stateDetail} />
-            {account.expiresAtMs <= 0 ? null : (
-              <Fact label={t('accountExpires')} value={new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(account.expiresAtMs))} />
-            )}
-          </div>
-          <div className="wbp-factRow">
-            <Fact label={t('accountSource')} value={t(
-              account.origin === 'desktop' ? 'accountOriginDesktop'
-                : account.origin === 'qr' ? 'accountOriginQr'
-                  : 'accountOriginCookie',
-            )} />
-            <Fact label={t('accountDomain')} value={account.domain} />
-            <Fact label={t('accountAddedAt')} value={new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(account.addedAtMs))} />
-            {account.lastUsedAtMs <= 0 ? null : (
-              <Fact label={t('accountLastUsed')} value={new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(account.lastUsedAtMs))} />
-            )}
-          </div>
-          {/*
-            * The usage report — the reference implementation's AccountReport
-            * stat grid, filled with the figures WorkBuddy actually publishes or
-            * this plugin actually counts:
-            *
-            *   [used this cycle] [remaining] [requests]
-            *   [input tokens]    [output tokens] [cache hit rate]
-            *
-            * A tile that has no number is OMITTED rather than shown as zero:
-            * "the upstream does not report this" and "this is zero" are different
-            * answers, and the second one is the kind of wrong-but-plausible
-            * figure a reader acts on.
-            */}
-          {account.credits === undefined && account.usage === undefined
-            ? <p className="wbp-hint">{t('usageNone')}</p>
-            : (
-              <div className="wbp-usageStats">
-                {account.creditsUsed === undefined ? null : (
-                  <UsageStat
-                    label={t('usageUsed')}
-                    value={new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(account.creditsUsed)}
-                    sub={account.creditsTotal === undefined ? undefined : `/ ${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(account.creditsTotal)}`}
-                  />
-                )}
-                {account.credits === undefined ? null : (
-                  <UsageStat
-                    label={t('usageRemaining')}
-                    value={new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(account.credits)}
-                    sub={account.creditsTotal === undefined ? t('accountCycleUncapped') : undefined}
-                  />
-                )}
-                {account.usage === undefined ? null : (
-                  <UsageStat
-                    label={t('usageRequests')}
-                    value={String(account.usage.requests)}
-                    sub={t('usageReported', { requests: account.usage.requests, reported: account.usage.reported })}
-                  />
-                )}
-                {account.usage === undefined || account.usage.reported === 0 ? null : (
-                  <>
-                    <UsageStat label={t('usagePromptTokens')} value={shortTokens(account.usage.promptTokens)} />
-                    <UsageStat label={t('usageOutputTokens')} value={shortTokens(account.usage.completionTokens)} />
-                    <UsageStat
-                      label={t('usageCacheHitRate')}
-                      value={account.usage.cacheHitRate === undefined
-                        ? t('usageCacheUnknown')
-                        : `${(account.usage.cacheHitRate * 100).toFixed(1)}%`}
-                      sub={account.usage.cacheReadTokens === 0
-                        ? undefined
-                        : t('usageSince', { date: new Intl.DateTimeFormat(undefined, { dateStyle: 'short' }).format(new Date(account.usage.sinceMs)) })}
-                    />
-                  </>
-                )}
-              </div>
-            )}
-          {account.creditsError === undefined ? null : (
-            <p className="wbp-rowError">{account.creditsError}</p>
-          )}
-          <div className="wbp-inlineActions">
-            {/*
-              * Enable/disable is the user's override for everything rotation
-              * decided on its own — a benching, a judged-dead session, or simply
-              * an account they do not want spent. It is an IMMEDIATE write, the
-              * one place this port departs from the reference's staging: "stop
-              * using this account now" is not a change to hold until Save.
-              */}
-            <ActionButton
-              label={account.enabled === true ? t('accountDisable') : t('accountEnable')}
-              disabled={busy}
-              onClick={() => { onAction({ action: 'enable', id: account.id, enabled: account.enabled !== true }) }}
-            />
-            <ActionButton
-              label={t('accountTest')}
-              disabled={busy}
-              onClick={() => { onAction({ action: 'test', id: account.id }) }}
-            />
-            <ActionButton
-              label={t('accountRename')}
-              disabled={busy}
-              onClick={() => { setLabel(account.name); setMode('rename') }}
-            />
-            <span className="wbp-spacer" />
-            <ActionButton
-              label={t('accountRemove')}
-              tone="danger"
-              disabled={busy}
-              onClick={() => { setMode('remove') }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/*
-        * The inline editors, below the disclosure they belong to (the
-        * reference's InlineInput / ConfirmBar): a bordered field for an input,
-        * an error-edged panel for a confirmation, both inside the row so the
-        * question never travels to a browser dialog.
-        */}
       {mode !== 'rename' ? null : (
         <div className="wbp-inlineForm">
           <div className="wbp-fieldHead">
@@ -571,7 +371,6 @@ function AccountRow({ account, product, busy, now, t, onAction }: {
     </div>
   )
 }
-
 /**
  * The promotional chips one model row shows, without saying "free" twice.
  *
@@ -596,25 +395,6 @@ function promotionChips(model: WorkBuddyWebModelBadge, freeLabel: string): strin
     ...model.free === true && !alreadySaysFree ? [freeLabel] : [],
   ]
 }
-
-/**
- * A cooldown's remaining time, worded for the reader.
- *
- * The unit decision is shared (`describeWait`); only the words are local, which
- * is why this composes them here rather than inside the document contract.
- */
-function waitLabel(untilMs: number, now: number, t: Translate): string {
-  const wait = describeWait(untilMs, now)
-  return t(wait.unit === 'hour' ? 'waitHours' : 'waitMinutes', { value: wait.value })
-}
-
-/** A token count as the switch's label: 1M reads better than 1000000. */
-function shortTokens(tokens: number): string {
-  if (tokens >= 1_000_000 && tokens % 1_000_000 === 0) return `${String(tokens / 1_000_000)}M`
-  if (tokens >= 1_000 && tokens % 1_000 === 0) return `${String(tokens / 1_000)}K`
-  return String(tokens)
-}
-
 /**
  * The model list for one product: a context-length switch where the upstream
  * declares a choice, and a reasoning-level detection button where the model has
@@ -802,7 +582,7 @@ function ModelsBlock({ variant, status, probe, busy, t, staged, context, onConte
         ? <SettingRow title={<span className="wbp-hint">{t('modelsEmpty')}</span>} className="wbp-rowFlush" />
         : models.map(model => (
             <div key={model.id} className="wbp-modelRow">
-              <span className="wbp-accountToggle">
+              <span className="wbp-modelMain">
                 {/*
                   * A model excluded by the filter wears its state on the row.
                   *
@@ -925,17 +705,19 @@ interface TaggedAccount {
 }
 
 /**
- * Every account from every product, as one list.
+ * The account area: one card per product, every account of that product inside
+ * the same card.
  *
- * Why the two pools are shown together: an account is an account — the user is
- * looking at "what can serve a request right now", and splitting that answer by
- * product made the list read as two separate features when it is one. Which
- * product a row belongs to is still on the row, as a quiet label under the name,
- * because that is the one fact that must not be inferred: the two products'
- * credits are not convertible and their models are not shared.
+ * Why one card per product rather than one card per account: an account is a row
+ * of the POOL, not a surface of its own. A card per account made a two-account
+ * pool look like two features, each with its own border, padding and header, and
+ * the figures a reader compares sat in separate frames. One card states the
+ * product once, its pool total once, and lists its accounts as rows — the shape
+ * every account list in this UI already uses.
  *
- * The totals stay separate for the same reason; summing them would produce a
- * number that describes nothing.
+ * The products stay apart because their credits are not convertible: a shared
+ * total would be a number that describes nothing, and the two pools are never
+ * interchangeable.
  */
 function AccountsSection({ entries, statuses, busy, now, t, onAdd, onAction, onRefreshAll }: {
   entries: readonly TaggedAccount[]
@@ -951,26 +733,23 @@ function AccountsSection({ entries, statuses, busy, now, t, onAdd, onAction, onR
   return (
     <SettingsGroup
       title={t('accountHeading')}
-      // The refresh control sits on the heading's line, beside "Add account":
-      // both are actions on the whole list rather than on one row, and the
-      // heading is where the list's scope is already stated.
-      action={entries.length === 0 ? undefined : (
-        <ActionButton
-          label={t('accountRefreshAll')}
-          disabled={busy}
-          title={t('accountRefreshAllHint')}
-          onClick={onRefreshAll}
-        />
+      // Both heading actions are actions on the whole list rather than on one
+      // row: adding picks a product first, refreshing re-reads both pools.
+      action={(
+        <>
+          {entries.length === 0 ? null : (
+            <ActionButton
+              label={t('accountRefreshAll')}
+              disabled={busy}
+              title={t('accountRefreshAllHint')}
+              onClick={onRefreshAll}
+            />
+          )}
+          <ActionButton label={t('accountAdd')} disabled={busy} onClick={onAdd} />
+        </>
       )}
       description={entries.length > 1 ? t('accountRotateHint') : t('accountEmptyHint')}
     >
-      {/*
-        * The reference implementation's account list shape: the rows, then the
-        * per-product totals, then the dashed add button that opens the product
-        * picker. The button carries the "new account" affordance INTO the block
-        * it adds to, rather than leaving it as a control in the heading whose
-        * effect (which list grows) the reader has to work out.
-        */}
       {/*
         * One line per product whose status read failed, naming the product and
         * the host's own diagnosis. Without it the product simply vanished from
@@ -988,8 +767,8 @@ function AccountsSection({ entries, statuses, busy, now, t, onAdd, onAction, onR
       })}
       {/*
         * A desktop-credential problem while the pool is otherwise healthy: the
-        * group looks fine, so nothing else would tell the user that the file
-        * they pointed the plugin at is being refused.
+        * card looks fine, so nothing else would tell the user that the file they
+        * pointed the plugin at is being refused.
         */}
       {CARD_VARIANTS.map(variant => {
         const status = statuses[variant.id]
@@ -1000,61 +779,100 @@ function AccountsSection({ entries, statuses, busy, now, t, onAdd, onAction, onR
           </p>
         )
       })}
-      {entries.length === 0 ? null : (
-        <div className="wbp-accountList">
-          {entries.map(({ account, variant }) => (
-            <AccountRow
-              key={account.id}
-              account={account}
-              product={variant.appName}
-              busy={busy}
-              now={now}
-              t={t}
-              onAction={action => { onAction(variant, action) }}
-            />
-          ))}
-        </div>
-      )}
-      {totalRows(statuses, t)}
-      <button type="button" className="wbp-addButton" disabled={busy} onClick={onAdd}>
-        <span className="wbp-addGlyph" aria-hidden="true" />
-        {t('accountAdd')}
-      </button>
+      <div className="wbp-productCards">
+        {CARD_VARIANTS.map(variant => (
+          <ProductAccountsCard
+            key={variant.id}
+            variant={variant}
+            accounts={entries.filter(entry => entry.variant.id === variant.id).map(entry => entry.account)}
+            status={statuses[variant.id]}
+            busy={busy}
+            now={now}
+            t={t}
+            onAction={action => { onAction(variant, action) }}
+          />
+        ))}
+      </div>
     </SettingsGroup>
   )
 }
 
-/** One product's total, when that product has accounts at all. */
-function totalRows(
-  statuses: Partial<Record<string, WorkBuddyWebStatus>>,
-  t: Translate,
-): React.ReactNode {
-  const rows = CARD_VARIANTS.flatMap(variant => {
-    const status = statuses[variant.id]
-    const list = status !== undefined && 'accounts' in status ? status.accounts?.accounts ?? [] : []
-    if (list.length === 0) return []
-    // Only accounts whose balance is actually known contribute: an unknown
-    // figure is not a zero, and adding it as one would understate the total.
-    const known = list.map(account => account.credits).filter((value): value is number => typeof value === 'number')
-    const total = known.reduce((sum, value) => sum + value, 0)
-    return [{ id: variant.id, name: variant.appName, total: known.length === 0 ? undefined : total }]
-  })
-  if (rows.length === 0) return null
-  // One tile per product, never a cross-product sum: the credits are not
-  // convertible, so a combined figure would describe nothing.
+/**
+ * One product's pooled accounts, in one card.
+ *
+ * What the card states, and in which order:
+ *
+ *   [product name]                       [remaining / capacity]
+ *   [status dot] [account name]  [state]              ⋮
+ *                [grey line: 剩余 / 已用 / 请求 / token / 恢复]
+ *   …
+ *
+ * The head total is the POOL's, summed over the accounts whose balance was
+ * actually read — an account whose lookup failed contributes nothing rather
+ * than a zero, because a zero would silently shrink a figure the reader is
+ * using to decide whether they need to add another account.
+ *
+ * A product with no accounts and nothing wrong to report renders nothing: a
+ * permanent "no accounts" card for a product the user does not use turns a
+ * status list into a reminder.
+ */
+function ProductAccountsCard({ variant, accounts, status, busy, now, t, onAction }: {
+  variant: WorkBuddyCardVariant
+  accounts: readonly WorkBuddyWebAccount[]
+  status: WorkBuddyWebStatus | undefined
+  busy: boolean
+  now: number
+  t: Translate
+  onAction: (action: WorkBuddyAccountAction) => void
+}): React.ReactNode {
+  const detail = status === undefined
+    ? undefined
+    : status.status === 'error' ? status.message
+      : status.status === 'signed-out' ? status.reason
+        : undefined
+  if (accounts.length === 0 && detail === undefined) return null
+
+  const known = accounts.map(account => account.credits).filter((value): value is number => typeof value === 'number')
+  const total = known.length === 0 ? undefined : known.reduce((sum, value) => sum + value, 0)
+  const capacityKnown = accounts.length > 0
+    && accounts.every(account => account.credits === undefined || account.creditsTotal !== undefined)
+  const capacity = capacityKnown
+    ? accounts.reduce((sum, account) => sum + (account.creditsTotal ?? 0), 0)
+    : 0
+  const ready = accounts.filter(account => account.available).length
+
   return (
-    <div className="wbp-usageStats">
-      {rows.map(row => (
-        <StatTile
-          key={row.id}
-          label={t('accountTotalCredits')}
-          value={row.total === undefined
-            ? '—'
-            : new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(row.total)}
-          sub={row.name}
-        />
-      ))}
-    </div>
+    <section className="wbp-productCard" aria-label={variant.appName}>
+      <div className="wbp-productHead">
+        <span className="wbp-productName">{variant.appName}</span>
+        {accounts.length === 0 ? null : (
+          <span className="wbp-productCount">{t('cardReady', { ready, total: accounts.length })}</span>
+        )}
+        <span className="wbp-spacer" />
+        <span className="wbp-productTotal">
+          {total === undefined
+            ? accounts.length === 0 ? '' : t('accountCreditsPending')
+            : capacity > 0
+              ? t('accountMetaRemainingOf', { remaining: formatCredit(total), total: formatCredit(capacity) })
+              : t('accountMetaRemaining', { remaining: formatCredit(total) })}
+        </span>
+      </div>
+      {detail === undefined ? null : <p className="wbp-productDetail">{detail}</p>}
+      {accounts.length === 0 ? null : (
+        <div className="wbp-accountList">
+          {accounts.map(account => (
+            <AccountRow
+              key={account.id}
+              account={account}
+              busy={busy}
+              now={now}
+              t={t}
+              onAction={onAction}
+            />
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -1079,25 +897,6 @@ function ProductPicker({ t, onPick, onCancel }: {
       </div>
     </div>,
     document.body,
-  )
-}
-
-/**
- * One tile in an account's usage grid, ported from the reference
- * implementation's `UsageStat`: label, figure, and an optional qualifier line
- * under it ("/ 2000", "since 09-24").
- */
-function UsageStat({ label, value, sub }: {
-  label: string
-  value: string
-  sub?: string | undefined
-}): React.ReactNode {
-  return (
-    <div className="wbp-usageStat">
-      <span className="wbp-usageStatLabel">{label}</span>
-      <span className="wbp-usageStatValue">{value}</span>
-      {sub === undefined || sub === '' ? null : <span className="wbp-usageStatSub">{sub}</span>}
-    </div>
   )
 }
 

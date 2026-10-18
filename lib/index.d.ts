@@ -500,6 +500,13 @@ declare class WorkBuddyUpstreamClient {
    * advertises is exactly the one its own requests can use. The international
    * variant has no CLI identity, so it keeps the App-shaped UA.
    *
+   * The same split has an account-identity axis (issue #123): an enterprise
+   * account must also present `X-User-Id` + `X-Enterprise-Id`, or the gateway
+   * answers with the personal roster. CN sends that pair via
+   * {@link identityHeaders} whenever the credential carries both halves; the
+   * international gateway's split was never measured against account headers,
+   * so it keeps its documented shape.
+   *
    * Membership is the `cli` roster intersected with the usable rows (see
    * {@link parseModelCatalog}); the promo badges the product document does
    * not carry are merged in from a best-effort console read — see
@@ -2187,6 +2194,15 @@ interface CreditEntry {
    * "used / total" pair built from a zero.
    */
   size?: number;
+  /**
+   * When the cycle's allowance returns, epoch ms.
+   *
+   * Parsed from the answer's `cycleResetTime` (a zone-less local stamp on the
+   * CN enterprise endpoint). Absent when the upstream stated none or the stamp
+   * could not be read: a missing reset is a different fact from "resets never",
+   * so nothing here invents one.
+   */
+  resetAtMs?: number;
   error?: string;
   atMs: number;
 }

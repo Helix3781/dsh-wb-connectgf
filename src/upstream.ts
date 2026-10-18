@@ -7,6 +7,7 @@
  * @module dsh-workbuddy-connect/upstream
  */
 
+import { randomUUID } from 'node:crypto'
 import { describeFetchFailure } from './fetch-failure.ts'
 import { isJsonObject, parseJsonObject } from './json-value.ts'
 import { appUserAgent, resolveAppVersion, type AppVersionInfo } from './app-version.ts'
@@ -473,6 +474,30 @@ function commonHeaders(credential: WorkBuddyCredential): Record<string, string> 
 }
 
 /**
+ * The conversation-channel trio the chat endpoints require.
+ *
+ * Since 2026-10-16 `www.workbuddy.ai` answers any `/v2/chat/completions`
+ * request that omits all three `X-Conversation-*` headers with `400` /
+ * `code 11128` / `"conversation id missing"` (issue #139). The official
+ * desktop client sends the trio on chat and speech alike.
+ *
+ * A fresh UUID per request is what the wire measurement supports: the upstream
+ * keeps no history keyed by the id (two calls sharing one id, the second
+ * carrying only `system` + `user`, still answered "I don't know"), so the trio
+ * marks the channel rather than carrying conversation state. Fresh ids also
+ * keep concurrent sub-agents off one shared conversation. The CN gateway was
+ * measured accepting the same trio, so both regions carry it and the two
+ * paths cannot drift.
+ */
+function conversationHeaders(): Record<string, string> {
+  return {
+    'X-Conversation-ID': randomUUID(),
+    'X-Conversation-Request-ID': randomUUID(),
+    'X-Conversation-Message-ID': randomUUID(),
+  }
+}
+
+/**
  * Chat request headers, including the X-No-* conventions the official CLI uses.
  *
  * `userAgent` and `clientVersion` are the two halves of one resolved desktop
@@ -501,6 +526,10 @@ function chatHeaders(credential: WorkBuddyCredential, userAgent: string, clientV
     'X-IDE-Name': 'WorkBuddy',
     'X-IDE-Version': clientVersion,
     'X-Product': 'SaaS',
+    // The channel trio rides every chat request: omitting it is a 400 on the
+    // international gateway and is accepted on CN, so sending it is the one
+    // form both regions agree on. See {@link conversationHeaders}.
+    ...conversationHeaders(),
   }
   return headers
 }
@@ -529,6 +558,34 @@ function billingHeaders(credential: WorkBuddyCredential): Record<string, string>
   if (credential.enterpriseId !== undefined && credential.enterpriseId !== '') {
     headers['X-Enterprise-Id'] = credential.enterpriseId
     headers['X-Tenant-Id'] = credential.enterpriseId
+  }
+  if (credential.domain !== '') headers['X-Domain'] = credential.domain
+  return headers
+}
+
+/**
+ * Account-identity headers for the CN catalog requests (`/v3/config` and the
+ * console badge read).
+ *
+ * The gateway also splits `/v3/config` by account identity: an enterprise
+ * account without this pair is silently answered with the personal roster
+ * (issue #123 — 18 vs 19 models, FlashX missing), and the pair is
+ * all-or-nothing there: `X-Enterprise-Id` alone is rejected outright while
+ * `X-User-Id` alone selects nothing. So the block is emitted only when both
+ * parts exist, and personal accounts keep the bare headers their roster was
+ * already correct under. `X-Tenant-Id`/`X-Domain` ride along in the spelling
+ * {@link billingHeaders} already proved the gateway accepts.
+ *
+ * The international gateway keeps its documented shape: its split was never
+ * measured against account headers.
+ */
+function identityHeaders(credential: WorkBuddyCredential): Record<string, string> {
+  if (credential.uid === '') return {}
+  if (credential.enterpriseId === undefined || credential.enterpriseId === '') return {}
+  const headers: Record<string, string> = {
+    'X-User-Id': credential.uid,
+    'X-Enterprise-Id': credential.enterpriseId,
+    'X-Tenant-Id': credential.enterpriseId,
   }
   if (credential.domain !== '') headers['X-Domain'] = credential.domain
   return headers
@@ -817,6 +874,13 @@ export class WorkBuddyUpstreamClient {
    * advertises is exactly the one its own requests can use. The international
    * variant has no CLI identity, so it keeps the App-shaped UA.
    *
+   * The same split has an account-identity axis (issue #123): an enterprise
+   * account must also present `X-User-Id` + `X-Enterprise-Id`, or the gateway
+   * answers with the personal roster. CN sends that pair via
+   * {@link identityHeaders} whenever the credential carries both halves; the
+   * international gateway's split was never measured against account headers,
+   * so it keeps its documented shape.
+   *
    * Membership is the `cli` roster intersected with the usable rows (see
    * {@link parseModelCatalog}); the promo badges the product document does
    * not carry are merged in from a best-effort console read — see
@@ -838,7 +902,7 @@ export class WorkBuddyUpstreamClient {
         Accept: 'application/json',
         Origin: originReferer(credential),
         Referer: `${originReferer(credential)}/`,
-        ...international ? { 'X-Requested-With': 'XMLHttpRequest', 'X-Product': 'SaaS' } : {},
+        ...international ? { 'X-Requested-With': 'XMLHttpRequest', 'X-Product': 'SaaS' } : identityHeaders(credential),
         'User-Agent': appVersion === undefined ? CLIENT_UA : appUserAgent(appVersion.version),
       },
       signal: signal === undefined
@@ -1295,7 +1359,42 @@ export function parseModelCatalog(
       .map(id => byId.get(id))
       .filter((model): model is WorkBuddyUpstreamModel => model !== undefined)
     if (models.length === 0) throw new Error('workbuddy model catalog resolved to an empty list')
-    return models
+    return disambiguateDisplayNames(models)
+}
+
+/**
+ * Make display names unique within one catalog.
+ *
+ * The CN document names both `hy3` and `hy3-x` "Hy3" — two neighbouring rows
+ * whose rates differ (`x0.00` free versus `x0.05`), so the picker and the probe
+ * card render two identical rows and the user cannot tell which one they are
+ * paying for. The static fallback spells the second one "Hy3-X", but the live
+ * fetch overwrote that correction: as soon as the roster gained the id, the
+ * collision came back through the parse path.
+ *
+ * The suffix comes from the id itself — whatever follows the shared name stem —
+ * so `hy3-x` reads "Hy3-X" again. Ids are untouched: they are the wire contract
+ * the request path and the shim route on. Only exact (case-insensitive)
+ * collisions are rewritten; a distinct upstream name such as `MiniMax-M3` for
+ * `minimax-m3-pay` keeps the upstream's own wording.
+ */
+function disambiguateDisplayNames(models: readonly WorkBuddyUpstreamModel[]): readonly WorkBuddyUpstreamModel[] {
+  const seen = new Set<string>()
+  return models.map(model => {
+    const key = model.name.trim().toLowerCase()
+    if (!seen.has(key)) {
+      seen.add(key)
+      return model
+    }
+    // Derive the distinguishing tail from the id. A collision whose id does not
+    // start with the name (`kimi-k3-2` named "Kimi-K3") yields no tail, so the
+    // upstream wording is left as-is rather than inventing a label.
+    const tail = model.id.toLowerCase().startsWith(key) ? model.id.slice(key.length) : ''
+    if (tail === '') return model
+    const name = `${model.name}${tail.toUpperCase()}`
+    seen.add(name.toLowerCase())
+    return { ...model, name }
+  })
 }
 
 /**

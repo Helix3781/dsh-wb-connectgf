@@ -569,17 +569,19 @@ describe('CN catalog: /v3/config roster, badge merge, and fallback consistency',
     // stable field — membership, order, metadata, credits, free flag.
     // Promotional badges are the deliberate exception: they are dynamic
     // console-side promotions, so they ride the live merge only and are
-    // stripped here before the comparison. (The other deviation is
-    // display-only: the fallback renames `hy3-x`, which the document names
-    // "Hy3", and the parse cannot know to do that.)
+    // stripped here before the comparison.
+    //
+    // Display names are NOT an exception any more. The document names both
+    // `hy3` and `hy3-x` "Hy3", and the parse now disambiguates them from the
+    // id (`disambiguateDisplayNames`), so the live roster and the static table
+    // agree down to the label — which is the whole point of this pin.
     const document = { models: LIVE_ROWS, agents: [{ name: 'cli', models: LIVE_ROSTER }] }
     const parsed = parseModelCatalog(document, false, CONSOLE_BADGES)
     const stable = parsed.map(model => {
       const { badges: _badges, ...billing } = model.billing ?? {}
       return { ...model, billing }
     })
-    const fallback = FALLBACK_WORKBUDDY_MODELS.map(model => model.id === 'hy3-x' ? { ...model, name: 'Hy3' } : model)
-    expect(stable).toEqual(fallback)
+    expect(stable).toEqual(FALLBACK_WORKBUDDY_MODELS.map(model => ({ ...model })))
     // The badges themselves stay live-only, never baked into the fallback.
     expect(FALLBACK_WORKBUDDY_MODELS.every(model => model.billing?.badges === undefined)).toBe(true)
     expect(parsed.filter(model => model.billing?.badges !== undefined).map(model => model.id).sort())

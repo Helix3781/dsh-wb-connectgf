@@ -350,6 +350,17 @@ export interface WorkBuddyWebAccount {
    */
   creditsUsed?: number
   /**
+   * When this cycle's allowance returns, epoch ms.
+   *
+   * The CN enterprise endpoint states it as `cycleResetTime`; a package list
+   * would state a per-package end time, which this plugin does not surface. The
+   * card states "resets in …" beside the balance — a figure that is about to
+   * lapse reads differently from one that lasts a month, and the two are
+   * indistinguishable without it. Absent when the upstream stated none: an
+   * absent reset is not a claim that the allowance never returns.
+   */
+  creditsResetAtMs?: number
+  /**
    * What this plugin has sent through the account, counted from the answers it
    * relayed (see the usage store). Absent until at least one request landed.
    */

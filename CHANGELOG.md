@@ -2,6 +2,33 @@
 
 版本号即 git tag，遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.13.14] — 2026-10-18
+
+**同步上游 0.7.8 / 重写设置页账号区。** 上游差异是逐条对着上游 commit 在本地源码里核过的，只补本仓库真正缺的部分（其余早在此前的 cherry-pick 里就有）。
+
+### 同步上游（本仓库此前缺的）
+
+- **DSH 0.2.1-rc.2 支持**：peer range 从 `^0.1.7-alpha.1 || ^0.2.0-rc.1` 放宽成再并上 `^0.2.1-rc.1`。上游在 0.7.7/0.7.8 里把 peer 钉死成 `0.2.1-rc.2`（等于放弃旧线），本仓库保留并集 —— 与 0.13.1 的双线策略一致。
+- **`@deepseek-ai/dsh-atomic-write` 改为打进产物**（`tsdown.config.ts` 的 `alwaysBundle`），并从 peer 列表移除。桌面运行时只在 `app.asar` 内部引用这个包、不保证把它暴露在插件的解析路径上：本机实测 `require.resolve` 从这里返回 `MODULE_NOT_FOUND`，装好的插件 `lib/account-cli-*.js` 一 import 就整块加载失败（上游 0.7.6 正是这么炸的）。打包后 `node --input-type=module -e "import('./lib/index.js')"` 通过。
+- **`X-Conversation-*` 三件头**（上游 #139）：国际网关 2026-10-16 起对不带该族的 `/v2/chat/completions` 直接回 400 / 11128。每个请求现生成三个 UUID；CN 网关实测接受同样的头，所以两版都带，不分支。
+- **CN 目录请求补企业身份头**（上游 #123）：`/v3/config` 按账号身份分发名册，企业账号缺 `X-User-Id` + `X-Enterprise-Id` 会被静默返回个人名册（少一个模型）。只有当凭证两半都在时才发，国际端点保持原样。
+- **显示名去重**（上游 a7318d1）：CN 文档把 `hy3` 与 `hy3-x` 都叫 "Hy3"，两条价格不同的行在选择器里无法区分。解析后按 id 尾部补后缀（`hy3-x` → "Hy3-X"），id 不动。
+- **`reg.exe` 诊断按字节判定**（上游 3f5fbd9）：中文 Windows 上 `reg query` 的 stderr 是 cp936，按 UTF-8 解码得到的乱码匹配不上任何诊断，导致每个不存在的根都报「发现不完整」。改为先 UTF-8 再 GBK 解码，并把 `execFile` 的 `encoding` 设为 `buffer`。
+- **网关端口避开 fetch 黑名单**（上游 2bdeb0f）：`listen(0)` 可能拿到 fetch 标准禁止的端口，pi-ai 的每个请求都会以 `TypeError: fetch failed` 失败，而监听器看起来是好的。`src/loopback.ts` 新增 `FETCH_BLOCKED_PORTS` / `bindToUsablePort`，shim 改用它。
+
+### 设置页账号区重写
+
+- **同一产品的账号合并进一张卡片**（原来一个账号一张卡）：卡片头是产品名、`ready/total 可用` 和该池的合计额度；下面每账号一行。
+- **删掉展开交互**：账号行的所有数字直接显示在名字下方的灰色小字里 —— 剩余 / 上限、已用、请求数、输入/输出 token、缓存命中率、恢复时间（或令牌过期时间）。以前这些都在折叠区里，等于把「打开这个页面的理由」藏起来。
+- **决策类操作留在 ⋮ 菜单**（启用/停用、测试、重命名、删除），重命名与删除仍是行内表单/确认条，不用浏览器对话框。
+- **数据侧补齐 `creditsResetAtMs`**：`CreditEntry` 以前根本没收上游的 `used`（`creditsUsed` 字段一直是死字段），也不读 `cycleResetTime`。现在两者都进快照，账号行才有「已用」「x 小时后恢复」可显示。
+- **改用平台原子件**：状态点走 `StateDot`，标签走 `Tag`（本地那套四色胶囊删除），分段控件对齐平台度量（4px 内边距、`--dsw-radius-md/sm`）。
+- **清理**：删掉 3 个只被自己引用的共用件（`Disclosure` / `QuotaBar` / `CheckRow`）、`UsageStat`、81 条死文案与 60 余条死样式规则。
+
+### 验证
+
+- `pnpm run typecheck` / `pnpm run test`（57 文件 / 774 用例）/ `pnpm run build` / `pnpm run test:engine` 全绿。
+- 测试随新结构更新：账号行的断言从「展开后的统计格子」改成「灰字里的片段」；产品合计从独立卡片改成 card head 上的「剩余 / 上限」。
 ## [0.13.13] — 2026-10-17
 
 - **修复「探测思考强度」在 WorkBuddy AI 上恒定报 `sentinel status 400 (invalid_parameter_value)`**：探测的第二步（sentinel，一个不可能合法的 `reasoning_effort` 值）用来判断上游到底认不认这个参数，只有把它的 400 认成「effort 值非法」才会继续走第三步逐档扫描。Global 端点在 2026-10-01 的实测里回的是手写码 `model_param_invalid`，2026-10-17 起改成回上游 `InvalidParameter` 句子生成的 `invalid_parameter_value` —— 语义没变、码变了，于是 `INVALID_EFFORT_CODES.global` 不再命中，整次探测降级成 `unknown`，界面只显示「检测未完成」。
