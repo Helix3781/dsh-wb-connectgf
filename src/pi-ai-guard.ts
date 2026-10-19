@@ -26,7 +26,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** The pi-ai generation this plugin is built and tested against. */
-export const REQUIRED_PI_AI_VERSION = '0.87.1'
+export const REQUIRED_PI_AI_VERSION = '1.1.0'
 
 /**
  * Read the version of the pi-ai copy Node resolves for *this* module.

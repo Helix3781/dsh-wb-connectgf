@@ -2399,8 +2399,10 @@ interface WorkBuddyRotationOutcome {
   account?: WorkBuddyAccount;
   /**
    * Set when the pool could not supply any account at all (empty, or every
-   * member disabled / benched / dead). `result` is then a synthesized
-   * `session_dead` answer so the shim's status mapping still applies.
+   * member disabled / benched / dead). `result` is then a synthesized answer
+   * whose CLASS follows why the pool is empty — transient benches answer
+   * `soft_rate` / `hard_credit` with a `Retry-After`, and only a pool that
+   * needs the user answers `session_dead`. See {@link noAccountResult}.
    */
   exhausted?: true;
 }

@@ -282,8 +282,10 @@ export function createWorkBuddyShim(options: WorkBuddyShimOptions): WorkBuddyShi
     if (!result.ok) {
       const status = KIND_STATUS[result.kind]
       if (result.retryAfter !== undefined) res.setHeader('Retry-After', result.retryAfter)
-      // A request that ran out of accounts is reported as a sign-in problem
-      // rather than as an upstream refusal, because that is what it is.
+      // The failure may be a synthesized one (the pool had nobody to try) or a
+      // real upstream refusal; either way its own class decides the status.
+      // See the rotation layer for why an empty pool is not always a sign-in
+      // problem any more (issue #3).
       const detail = extractDisplayErrorMessage(result.message) ?? result.message.slice(0, 400)
       // The host adapter classifies any error text containing a bare 401/403
       // word as AUTH, which would mask business errors (safety review, illegal
@@ -292,7 +294,11 @@ export function createWorkBuddyShim(options: WorkBuddyShimOptions): WorkBuddyShi
       // errors stay recognisable. Known residue: an extracted display text that
       // itself names 403 still trips the host heuristic; the real text wins
       // over hiding the number.
-      const statusNote = (result.status === 401 || result.status === 403) && result.kind !== 'session_dead'
+      // No upstream call was made at all when the status is 0 (a synthesized
+      // pool-empty answer), so there is no http number to quote: printing
+      // "(http 0)" would invent a response nobody sent.
+      const statusNote = result.status <= 0
+        || ((result.status === 401 || result.status === 403) && result.kind !== 'session_dead')
         ? ''
         : ` (http ${result.status})`
       const type = status === 401 ? 'not_signed_in' : result.kind

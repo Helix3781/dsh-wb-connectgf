@@ -2,6 +2,25 @@
 
 版本号即 git tag，遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.13.15] — 2026-10-19
+
+**修 issue #3：暂时为空的账号池被报成 401 session_dead**，宿主据此判 AUTH 并显示「API 密钥无效 / 未登录」，而 token 完全有效、账号一分钟后自愈。
+
+根因在 `src/rotation.ts` 的 `noAccountResult()`：它把「池子里现在没人可用」一律映射成 `kind: session_dead` + `status: 0`，而 `KIND_STATUS.session_dead = 401`，shim 于是回 401 `not_signed_in` —— 宿主的 `classifyPiAiError` 把它归为不可重试的 AUTH。
+
+issue 里的建议改法是「一律 429 + Retry-After: 60」。那会把反向的误判带上：池子真的为空、或所有账号被用户停用/登录失效时，那是**登录问题**，应当请用户去登录，而不是让宿主无限重试。所以按「池子为什么空」分类：
+
+- **有成员能自己回来**（被限流 bench，`cooldown.untilMs` 在未来）→ `soft_rate` / 429，`Retry-After` 取**最早**回来的那个账号的剩余秒数（不是写死 60），宿主于是启动自己的退避重试。
+- **能自己回来的成员全是额度耗尽**（`cooldown.reason === 'credit'`）→ `hard_credit` / 402：同样自愈，但一秒后重试只会再吃一次拒绝，交还给让用户换账号/等额度。
+- **没有成员能自己回来**（池为空 / 全被停用 / 全 session_dead）→ 仍是 `session_dead` / 401，并且文案分开：空池说「未登录，请登录一次或添加账号」，全被禁用说「N 个账号均已停用或登录失效，请重新启用或登录」。
+
+同时修掉一处会误导排查的输出：`status: 0` 表示**根本没有发上游请求**，旧代码仍在错误文案里拼 `(http 0)`，读起来像一个真实但奇怪的上游状态。现在 0 不再带状态注记。
+
+新增回归（共 7 例）：
+- `tests/rotation.spec.ts`：限流池 → `soft_rate` 且 `Retry-After` 有界、额度池 → `hard_credit`、全停用 → `session_dead` 且无 `Retry-After`、空池 → 登录提示；并镜像宿主的 `\b(?:401|403)\b` 启发式，断言合成的错误文案不会踩中它。
+- `tests/shim.spec.ts`：把三类合成失败真的走一遍 HTTP，断言状态码 429 / 402 / 401、`Retry-After` 头的存在与缺失、以及文案里不再出现 `http 0`。
+
+顺带跟随宿主代次（上一版遗留）：`devDependencies` 的 `@deepseek-ai/dsh-*` 全部升到 `0.2.1-rc.2`、`@earendil-works/pi-ai` 升到 `1.1.0`（与 DSH `0.2.1-rc.2` 宿主同代）、`cordis ^4.0.5` / `cosmokit 1.8.6` / `schemastery ^3.18.5`；`pi-ai-guard` 的期望版本同步为 `1.1.0`。装到本机 Desktop profile 后实际加载为 `0.13.14` 时已验证路由可用，本版在此基础上继续。
 ## [0.13.14] — 2026-10-18
 
 **同步上游 0.7.8 / 重写设置页账号区。** 上游差异是逐条对着上游 commit 在本地源码里核过的，只补本仓库真正缺的部分（其余早在此前的 cherry-pick 里就有）。
