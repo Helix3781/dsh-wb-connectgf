@@ -3,8 +3,8 @@ import { createElement } from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { buildPanelView } from '../src/client/panel.ts'
 import { WorkBuddyFooterEntry } from '../src/client/panel-view.tsx'
-import { createWorkBuddyPanelStore } from '../src/client/panel-store.ts'
 import type { WorkBuddyPanelSnapshot } from '../src/client/panel-store.ts'
+import { createWorkBuddyPanelStore } from '../src/client/panel-store.ts'
 import { panelTranslator, PANEL_COPY_EN, PANEL_COPY_ZH } from '../src/client/panel-copy.ts'
 import { CARD_VARIANTS } from '../src/client/card-variants.ts'
 import type { WorkBuddyWebStatus } from '../src/status-paths.ts'
@@ -238,6 +238,43 @@ describe('the sidebar footer entry', () => {
     // The balance, named by its product — the one figure the card exists to show.
     expect(rendered).toContain('100')
     expect(rendered).toContain('remaining')
+  })
+
+
+  /**
+   * The flash this gate exists for: before the first sweep the snapshot is empty,
+   * so every preference reads its default — and the default is "present". The
+   * card used to draw for one frame and then disappear when the real document
+   * (with the switch off) landed.
+   */
+  it('draws nothing until a sweep has settled, so a hidden card never flashes', () => {
+    const empty: WorkBuddyPanelSnapshot = { statuses: {}, loading: true, fetchedAt: 0 }
+    const view = buildPanelView({ snapshot: empty })
+    expect(view.preferencesSettled).toBe(false)
+
+    let tree: ReactTestRenderer | undefined
+    let starts = 0
+    act(() => {
+      tree = create(createElement(WorkBuddyFooterEntry, {
+        useWorkBuddyPanel: <T,>(selector: (snapshot: WorkBuddyPanelSnapshot) => T): T => selector(empty),
+        refresh: () => {},
+        startAutoRefresh: () => { starts += 1; return () => {} },
+        open: () => {},
+        close: () => {},
+      } as never))
+    })
+    expect(tree?.toJSON()).toBeNull()
+    // The poll still starts: the gate is about what is DRAWN, not about reading.
+    expect(starts).toBe(1)
+    act(() => { tree?.unmount() })
+  })
+
+  it('treats any completed sweep as settled, even one where every route failed', () => {
+    // A broken host keeps its card: `fetchedAt` records the sweep, not success.
+    const settled = buildPanelView({ snapshot: { statuses: {}, loading: false, fetchedAt: 7 } })
+    expect(settled.preferencesSettled).toBe(true)
+    // ...and only then does the stored switch take effect.
+    expect(settled.creditVisible).toBe(true)
   })
 
   it('draws nothing, in both the wide column and the rail, once the card is switched off', () => {

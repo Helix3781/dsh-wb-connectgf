@@ -12,7 +12,7 @@
  */
 
 /** Locale namespace the panel's surfaces register under. */
-export const PANEL_LOCALE_NS = 'panel.workbuddy'
+export const PANEL_LOCALE_NS = 'panel.workbuddy.functy'
 
 /** English dictionary; the key domain for both surfaces. */
 export const PANEL_COPY_EN = {

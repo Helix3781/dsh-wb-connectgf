@@ -120,6 +120,16 @@ export function Menu({ open, onSelect, items, footer, selectedIds, anchor }: Men
   )
 }
 
+/**
+ * The platform state dot, as a data-attributed span.
+ *
+ * The real atom paints a 6px currentColor core inside a 10px slot; tests only
+ * need to know WHICH state a row claims, so the state is the attribute.
+ */
+export function StateDot({ state, className }: { state: 'done' | 'warning' | 'error' | 'idle' | 'ongoing', className?: string }): ReactNode {
+  return <span data-state-dot={state} className={className} />
+}
+
 /** A read-only tag. */
 export function Tag({ tone, children }: { tone?: string, children?: ReactNode }): ReactNode {
   return <span data-tone={tone ?? 'outline'}>{children}</span>

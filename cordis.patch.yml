@@ -2,5 +2,9 @@
 # default model. The plugin reuses the WorkBuddy desktop app's sign-in; no
 # separate OAuth flow is started.
 - insert:
-    - id: llm-workbuddy
+    # A fork-specific row id: upstream (dsh-workbuddy-connect) inserts its own
+    # row as llm-workbuddy, and a duplicate id makes the host refuse every
+    # settings write from whichever plugin lost the id race. See
+    # WORKBUDDY_PROFILE_ENTRY_ID in src/status-paths.ts.
+    - id: llm-workbuddy-functy
       name: dsh-workbuddy-connect-functy

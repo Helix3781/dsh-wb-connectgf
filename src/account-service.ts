@@ -23,6 +23,32 @@ import type { WorkBuddyVariant } from './variants.ts'
 /** How long a per-account credit figure is reused before it is fetched again. */
 const CREDIT_TTL_MS = 60_000
 
+/**
+ * Read the upstream's `cycleResetTime` as epoch milliseconds.
+ *
+ * The CN enterprise endpoint sends a zone-less local stamp (`YYYY-MM-DD
+ * HH:mm:ss`), which `Date` reads inconsistently across runtimes — either as
+ * UTC or not at all. It is read as local time, matching how the value is
+ * produced: the reset describes the user's own cycle, and it is compared
+ * against the user's own clock.
+ *
+ * A stamp that cannot be read yields `undefined` rather than a sentinel: "the
+ * upstream did not tell us" must never render as a concrete reset time.
+ *
+ * @param value - the raw field, already known to be a non-empty string.
+ */
+function parseResetTime(value: string): number | undefined {
+  const normalised = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/u.test(value.trim())
+    ? value.trim().replace('T', ' ')
+    : undefined
+  if (normalised === undefined) {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  const parsed = Date.parse(normalised.replace(' ', 'T'))
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 /** One account as the browser renders it. Never carries token material. */
 export interface WorkBuddyWebAccount {
   id: string
@@ -132,6 +158,15 @@ interface CreditEntry {
    * "used / total" pair built from a zero.
    */
   size?: number
+  /**
+   * When the cycle's allowance returns, epoch ms.
+   *
+   * Parsed from the answer's `cycleResetTime` (a zone-less local stamp on the
+   * CN enterprise endpoint). Absent when the upstream stated none or the stamp
+   * could not be read: a missing reset is a different fact from "resets never",
+   * so nothing here invents one.
+   */
+  resetAtMs?: number
   error?: string
   atMs: number
 }
@@ -333,9 +368,14 @@ export class WorkBuddyAccountService {
         const capacity = answer.unlimited === true || answer.accounts.some(entry => entry.size <= 0)
           ? undefined
           : answer.accounts.reduce((sum, entry) => sum + entry.size, 0)
+        const resetAtMs = answer.cycleResetTime === undefined
+          ? undefined
+          : parseResetTime(answer.cycleResetTime)
         const entry: CreditEntry = {
           total: answer.total,
+          ...answer.used === undefined ? {} : { used: answer.used },
           ...capacity === undefined ? {} : { size: capacity },
+          ...resetAtMs === undefined ? {} : { resetAtMs },
           atMs: this.now(),
         }
         this.credits.set(account.id, entry)
@@ -391,6 +431,7 @@ export class WorkBuddyAccountService {
         ...credits?.total === undefined ? {} : { credits: credits.total },
         ...credits?.used === undefined ? {} : { creditsUsed: credits.used },
         ...credits?.size === undefined ? {} : { creditsTotal: credits.size },
+        ...credits?.resetAtMs === undefined ? {} : { creditsResetAtMs: credits.resetAtMs },
         ...credits?.error === undefined ? {} : { creditsError: credits.error },
         ...credits === undefined ? {} : { creditsAtMs: credits.atMs },
         ...this.usageFor?.(account.id) === undefined ? {} : { usage: this.usageFor(account.id) },

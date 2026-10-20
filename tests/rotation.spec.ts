@@ -91,6 +91,15 @@ const credit = (): WorkBuddyChatResult => ({ ok: false, status: 402, kind: 'hard
 const dead = (): WorkBuddyChatResult => ({ ok: false, status: 401, kind: 'session_dead', message: 'session dead' })
 const badRequest = (): WorkBuddyChatResult => ({ ok: false, status: 400, kind: 'client', message: 'bad model' })
 
+
+/**
+ * The host adapter's auth heuristic (dsh-llm-pi-ai): any error text matching
+ * /(?:401|403)/ is reclassified as AUTH and the UI replaces it with an
+ * invalid-API-key banner. The rotation layer's synthesized failures are checked
+ * against it so a transient pool state cannot trip it.
+ */
+const hostAuthHeuristic = /(?:401|403)/u
+
 describe('rotation on a limited account', () => {
   it('switches to another account when the first answers 429', async () => {
     const pool = await makePool()
@@ -258,6 +267,77 @@ describe('rotation on a limited account', () => {
     expect(seen).toEqual(['uid-a'])
     expect(outcome.result.ok).toBe(false)
     expect(outcome.exhausted).toBeUndefined()
+  })
+
+
+  /**
+   * Issue #3: a pool that is temporarily empty must not read as a dead session.
+   *
+   * The transient case is the common one — a single account gets a 429, is
+   * benched for a minute, and the pool has nothing to offer. The old answer was
+   * 401 / session_dead, which the harness shows as "invalid API key" and never
+   * retries, for a credential that is perfectly good.
+   */
+  it('answers a temporarily benched pool as a retryable rate limit', async () => {
+    const pool = await makePool()
+    const a = add(pool, 'uid-a')
+    pool.cooldown(a, 'rate', 60_000)
+    const { seen, client } = recorder(() => ok())
+    const rotation = new WorkBuddyRotation({ pool, client })
+    const outcome = await rotation.send('{}')
+    expect(seen).toEqual([])
+    expect(outcome.result.ok).toBe(false)
+    if (outcome.result.ok) return
+    expect(outcome.result.kind).toBe('soft_rate')
+    // A wait the harness can honour, not a status nobody sent.
+    expect(outcome.result.retryAfter).toBeDefined()
+    expect(Number(outcome.result.retryAfter)).toBeGreaterThan(0)
+    expect(Number(outcome.result.retryAfter)).toBeLessThanOrEqual(60)
+    expect(outcome.result.status).toBe(0)
+    // The text must not match the host's 401/403 AUTH heuristic.
+    expect(hostAuthHeuristic.test(outcome.result.message)).toBe(false)
+  })
+
+  it('answers an all-out-of-quota pool with the credit class, not a rate limit', async () => {
+    const pool = await makePool()
+    const a = add(pool, 'uid-a')
+    pool.cooldown(a, 'credit', 3 * 3_600_000)
+    const { client } = recorder(() => ok())
+    const rotation = new WorkBuddyRotation({ pool, client })
+    const outcome = await rotation.send('{}')
+    expect(outcome.result.ok).toBe(false)
+    if (outcome.result.ok) return
+    // Retrying a second later would only spend another refusal.
+    expect(outcome.result.kind).toBe('hard_credit')
+    expect(outcome.result.retryAfter).toBeDefined()
+  })
+
+  it('still asks the user to sign in when nothing recovers on its own', async () => {
+    const pool = await makePool()
+    const a = add(pool, 'uid-a')
+    pool.setEnabled(a, false)
+    const { client } = recorder(() => ok())
+    const rotation = new WorkBuddyRotation({ pool, client })
+    const outcome = await rotation.send('{}')
+    expect(outcome.result.ok).toBe(false)
+    if (outcome.result.ok) return
+    // Switched off is a decision, not a wait: no Retry-After, and the user is
+    // the one who can fix it.
+    expect(outcome.result.kind).toBe('session_dead')
+    expect(outcome.result.retryAfter).toBeUndefined()
+    expect(outcome.result.message).toContain('switched off')
+  })
+
+  it('reports an empty pool as a sign-in problem with no wait attached', async () => {
+    const pool = await makePool()
+    const { client } = recorder(() => ok())
+    const rotation = new WorkBuddyRotation({ pool, client })
+    const outcome = await rotation.send('{}')
+    expect(outcome.result.ok).toBe(false)
+    if (outcome.result.ok) return
+    expect(outcome.result.kind).toBe('session_dead')
+    expect(outcome.result.retryAfter).toBeUndefined()
+    expect(outcome.result.message).toContain('no WorkBuddy account is signed in')
   })
 
   it('reports "no account" rather than calling upstream with nothing', async () => {

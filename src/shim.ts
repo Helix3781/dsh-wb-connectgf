@@ -20,7 +20,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Readable } from 'node:stream'
 import type { WorkBuddyCredential } from './auth.ts'
 import type { WorkBuddyCatalog } from './catalog.ts'
-import { hostIsLoopback, originIsLoopback } from './loopback.ts'
+import { bindToUsablePort, hostIsLoopback, originIsLoopback } from './loopback.ts'
 import { extractDisplayErrorMessage, prepareChatBody, type UpstreamErrorKind, type WorkBuddyChatResult } from './upstream.ts'
 import { type WorkBuddyRequestUsage } from './usage-store.ts'
 
@@ -196,12 +196,15 @@ export function createWorkBuddyShim(options: WorkBuddyShimOptions): WorkBuddyShi
     void handle(req, res)
   })
 
-  const ready = new Promise<void>((resolve, reject) => {
-    server.once('listening', () => resolve())
-    server.once('error', reject)
-  })
-
-  server.listen(0, '127.0.0.1')
+  // Bind an ephemeral port `fetch` will actually connect to: the OS can hand out
+  // one of the fetch standard's blocked ports, and every pi-ai call would then
+  // fail with `TypeError: fetch failed` against a listener that is otherwise up.
+  const ready: Promise<void> = bindToUsablePort(server, {
+    host: '127.0.0.1',
+    onBlockedPort: (port, attempt) => {
+      logger?.warn(`dsh-workbuddy-connect: port ${port} is blocked for fetch; rebinding (attempt ${attempt})`)
+    },
+  }).then(() => undefined)
 
   const baseUrl = (): string => {
     const address = server.address()
@@ -279,8 +282,10 @@ export function createWorkBuddyShim(options: WorkBuddyShimOptions): WorkBuddyShi
     if (!result.ok) {
       const status = KIND_STATUS[result.kind]
       if (result.retryAfter !== undefined) res.setHeader('Retry-After', result.retryAfter)
-      // A request that ran out of accounts is reported as a sign-in problem
-      // rather than as an upstream refusal, because that is what it is.
+      // The failure may be a synthesized one (the pool had nobody to try) or a
+      // real upstream refusal; either way its own class decides the status.
+      // See the rotation layer for why an empty pool is not always a sign-in
+      // problem any more (issue #3).
       const detail = extractDisplayErrorMessage(result.message) ?? result.message.slice(0, 400)
       // The host adapter classifies any error text containing a bare 401/403
       // word as AUTH, which would mask business errors (safety review, illegal
@@ -289,7 +294,11 @@ export function createWorkBuddyShim(options: WorkBuddyShimOptions): WorkBuddyShi
       // errors stay recognisable. Known residue: an extracted display text that
       // itself names 403 still trips the host heuristic; the real text wins
       // over hiding the number.
-      const statusNote = (result.status === 401 || result.status === 403) && result.kind !== 'session_dead'
+      // No upstream call was made at all when the status is 0 (a synthesized
+      // pool-empty answer), so there is no http number to quote: printing
+      // "(http 0)" would invent a response nobody sent.
+      const statusNote = result.status <= 0
+        || ((result.status === 401 || result.status === 403) && result.kind !== 'session_dead')
         ? ''
         : ` (http ${result.status})`
       const type = status === 401 ? 'not_signed_in' : result.kind

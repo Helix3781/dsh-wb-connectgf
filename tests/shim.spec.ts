@@ -28,7 +28,7 @@ function rawRequest(options: {
   path: string
   headers: Record<string, string>
   body?: string
-}): Promise<{ status: number, body: string }> {
+}): Promise<{ status: number, body: string, headers: Record<string, string | string[] | undefined> }> {
   return new Promise((resolve, reject) => {
     const req = request({
       host: '127.0.0.1',
@@ -42,6 +42,7 @@ function rawRequest(options: {
       res.on('end', () => resolve({
         status: res.statusCode ?? 0,
         body: Buffer.concat(chunks).toString('utf8'),
+        headers: res.headers,
       }))
     })
     req.on('error', reject)
@@ -414,5 +415,81 @@ describe('error text policy against the host AUTH heuristic (PR #58)', () => {
     const body = JSON.parse(text) as { error: { message: string } }
     expect(body.error.message).toBe('workbuddy upstream client: plain text refusal without json')
     expect(HOST_AUTH_HEURISTIC.test(body.error.message)).toBe(false)
+  })
+})
+
+describe('a synthesized pool-empty failure on the wire (issue #3)', () => {
+  /**
+   * The rotation layer can answer without ever calling upstream, when the pool
+   * has nobody available. The shim must relay that answer's own class: a
+   * temporarily benched pool is 429 with a Retry-After the harness can honour,
+   * not the 401 the harness shows as "invalid API key" and never retries.
+   */
+  async function synthesized(result: WorkBuddyChatResult): Promise<{ status: number, retryAfter: string | undefined, body: { error: { type: string, message: string } } }> {
+    const harness = await startShim(() => result)
+    const port = Number(new URL(harness.shim.baseUrl()).port)
+    const res = await rawRequest({
+      port,
+      method: 'POST',
+      path: '/v1/chat/completions',
+      headers: {
+        host: `127.0.0.1:${port}`,
+        'content-type': 'application/json',
+        authorization: `Bearer ${harness.shim.token()}`,
+      },
+      body: JSON.stringify({ model: 'hy3', messages: [] }),
+    })
+    const retryAfter = res.headers['retry-after']
+    return {
+      status: res.status,
+      retryAfter: Array.isArray(retryAfter) ? retryAfter[0] : retryAfter,
+      body: JSON.parse(res.body) as { error: { type: string, message: string } },
+    }
+  }
+
+  it('relays a transient bench as 429 without tripping the host auth heuristic', async () => {
+    const res = await synthesized({
+      ok: false,
+      status: 0,
+      kind: 'soft_rate',
+      message: 'every WorkBuddy account is temporarily set aside; the soonest returns in 42s',
+      retryAfter: '42',
+    })
+    expect(res.status).toBe(429)
+    expect(res.body.error.type).toBe('soft_rate')
+    // The wait reaches the harness as a header it actually honours.
+    expect(res.retryAfter).toBe('42')
+    // A synthesized answer never quotes an http status: no response carried one.
+    expect(res.body.error.message).not.toContain('http 0')
+    expect(res.body.error.message).not.toMatch(/\b(?:401|403)\b/u)
+  })
+
+  it('relays an all-out-of-quota pool as 402', async () => {
+    const res = await synthesized({
+      ok: false,
+      status: 0,
+      kind: 'hard_credit',
+      message: 'every WorkBuddy account is out of quota; the soonest allowance returns in 3600s',
+      retryAfter: '3600',
+    })
+    expect(res.status).toBe(402)
+    expect(res.body.error.type).toBe('hard_credit')
+    expect(res.retryAfter).toBe('3600')
+    expect(res.body.error.message).not.toContain('http 0')
+  })
+
+  it('still asks for a sign-in when the pool genuinely needs one', async () => {
+    const res = await synthesized({
+      ok: false,
+      status: 0,
+      kind: 'session_dead',
+      message: 'no WorkBuddy account is signed in; sign in once in the desktop app, or add an account',
+    })
+    expect(res.status).toBe(401)
+    expect(res.body.error.type).toBe('not_signed_in')
+    // Nothing recovers on a clock here: a wait header would invite a retry
+    // that cannot succeed.
+    expect(res.retryAfter).toBeUndefined()
+    expect(res.body.error.message).not.toContain('http 0')
   })
 })

@@ -60,8 +60,10 @@ export interface WorkBuddyRotationOutcome {
   account?: WorkBuddyAccount
   /**
    * Set when the pool could not supply any account at all (empty, or every
-   * member disabled / benched / dead). `result` is then a synthesized
-   * `session_dead` answer so the shim's status mapping still applies.
+   * member disabled / benched / dead). `result` is then a synthesized answer
+   * whose CLASS follows why the pool is empty — transient benches answer
+   * `soft_rate` / `hard_credit` with a `Retry-After`, and only a pool that
+   * needs the user answers `session_dead`. See {@link noAccountResult}.
    */
   exhausted?: true
 }
@@ -204,13 +206,78 @@ function aborted(signal?: AbortSignal): boolean {
   return signal !== undefined && signal.aborted
 }
 
-/** How the shim should answer when no account could be tried. */
-function noAccountResult(): WorkBuddyChatResult {
+/**
+ * The soonest a benched-but-recoverable account returns, in whole seconds.
+ *
+ * Only accounts that could serve again WITHOUT the user doing anything count:
+ * a disabled one or a judged-dead one is waiting for a decision, not for the
+ * clock, and its cooldown (if any) says nothing about when the pool heals.
+ *
+ * @returns seconds until the earliest return, or undefined when no account
+ *   recovers on its own.
+ */
+function soonestReturnSeconds(pool: WorkBuddyAccountPool, now: number): number | undefined {
+  let soonest: number | undefined
+  for (const account of pool.list()) {
+    if (!account.enabled || account.sessionDead === true) continue
+    const until = account.cooldown?.untilMs
+    if (until === undefined || until <= now) continue
+    if (soonest === undefined || until < soonest) soonest = until
+  }
+  if (soonest === undefined) return undefined
+  return Math.max(1, Math.ceil((soonest - now) / 1000))
+}
+
+/**
+ * How the shim should answer when no account could be tried at all.
+ *
+ * The old answer was a flat `session_dead` / 401, which the harness classifies
+ * as AUTH — an unretryable "your API key is invalid" banner. That is wrong for
+ * the transient case it most often describes: with one account, a 429 benches
+ * it for a minute, the pool looks empty, and the user is told their credential
+ * is bad while it is perfectly valid. Issue #3.
+ *
+ * The class therefore follows the REASON the pool is empty, not the fact that
+ * it is:
+ *
+ * - a member that comes back on its own (benched for a rate limit) is a
+ *   `soft_rate` / 429, with `Retry-After` naming when the soonest one returns —
+ *   the harness then retries instead of blaming the credential;
+ * - every returning member benched for CREDIT is a `hard_credit` / 402: also
+ *   self-healing, but retrying in a second would only spend another refusal;
+ * - nothing recovers on its own (no account at all, all switched off, all
+ *   signed out) stays `session_dead` / 401, because that really is the user's
+ *   move and telling them so is the useful answer.
+ *
+ * `status` stays 0 for every branch: no upstream call was made, and inventing
+ * an upstream status here would put a number in the wire text that no response
+ * ever carried. The shim derives the HTTP status from `kind`.
+ */
+function noAccountResult(pool: WorkBuddyAccountPool, now = Date.now()): WorkBuddyChatResult {
+  const accounts = pool.list()
+  const actionable = accounts.filter(account => account.enabled && account.sessionDead !== true)
+  const retryAfterSec = soonestReturnSeconds(pool, now)
+  if (retryAfterSec !== undefined) {
+    // Every member that could recover is benched; only credit exhaustion gets
+    // its own class, because a retry within a second cannot help there.
+    const allCredit = actionable.length > 0 && actionable.every(account => account.cooldown?.reason === 'credit')
+    return {
+      ok: false,
+      status: 0,
+      kind: allCredit ? 'hard_credit' : 'soft_rate',
+      message: allCredit
+        ? `every WorkBuddy account is out of quota; the soonest allowance returns in ${String(retryAfterSec)}s`
+        : `every WorkBuddy account is temporarily set aside; the soonest returns in ${String(retryAfterSec)}s`,
+      retryAfter: String(retryAfterSec),
+    }
+  }
   return {
     ok: false,
     status: 0,
     kind: 'session_dead',
-    message: 'no WorkBuddy account is currently usable (the pool is empty, or every account is disabled, benched, or signed out)',
+    message: accounts.length === 0
+      ? 'no WorkBuddy account is signed in; sign in once in the desktop app, or add an account'
+      : `no WorkBuddy account can serve: all ${String(accounts.length)} are switched off or signed out; re-enable one, or sign in again`,
   }
 }
 
@@ -283,7 +350,7 @@ export class WorkBuddyRotation {
 
     for (;;) {
       if (aborted(signal)) {
-        return { result: lastResult ?? noAccountResult(), attempts, ...lastAccount === undefined ? {} : { account: lastAccount } }
+        return { result: lastResult ?? noAccountResult(this.pool), attempts, ...lastAccount === undefined ? {} : { account: lastAccount } }
       }
       // `next` claims as it selects, so two requests in the same tick cannot
       // both start on the same account; there is no separate "mark used" step.
@@ -353,7 +420,7 @@ export class WorkBuddyRotation {
     }
 
     if (lastResult === undefined) {
-      return { result: noAccountResult(), attempts, exhausted: true }
+      return { result: noAccountResult(this.pool), attempts, exhausted: true }
     }
     // Every account was tried and the last one's answer is what the user gets;
     // the pool being unable to satisfy the request is worth saying out loud.

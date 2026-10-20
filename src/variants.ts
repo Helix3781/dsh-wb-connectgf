@@ -72,6 +72,24 @@ export interface WorkBuddyVariant {
   /** Basename of the plugin-owned probe-record file under `$DSH_HOME`. */
   probeFilename: string
   /**
+   * Where this variant's daily check-in records live.
+   *
+   * Per variant like every other store: the two products' accounts share an id
+   * namespace, so one file would let a CN account's record answer for an
+   * international one with the same uid.
+   */
+  checkinFilename: string
+  /**
+   * Whether this product HAS a daily check-in at all.
+   *
+   * The CN gateway grants daily credit for one; the international gateway has
+   * no such endpoint — it was retired upstream, and calling the CN path against
+   * it is a guaranteed refusal. A capability flag rather than a branch at each
+   * call site, so the surface, the scheduler and the route all disappear
+   * together instead of one of them forgetting.
+   */
+  checkinSupported: boolean
+  /**
    * Basename of the plugin-owned request-usage file under `$DSH_HOME`.
    *
    * One per variant like the pools and catalogs: the two products have separate
@@ -164,6 +182,8 @@ export const WORKBUDDY_VARIANTS: readonly WorkBuddyVariant[] = [
     accountFilename: '.workbuddy-accounts.json',
     contextFilename: '.workbuddy-context.json',
     probeFilename: '.workbuddy-probe.json',
+    checkinFilename: '.workbuddy-checkin.json',
+    checkinSupported: true,
     usageFilename: '.workbuddy-usage.json',
     catalogFilename: '.workbuddy-catalog.json',
     visibilityFilename: '.workbuddy-model-visibility.json',
@@ -198,6 +218,8 @@ export const WORKBUDDY_VARIANTS: readonly WorkBuddyVariant[] = [
     accountFilename: '.workbuddy-ai-accounts.json',
     contextFilename: '.workbuddy-ai-context.json',
     probeFilename: '.workbuddy-ai-probe.json',
+    checkinFilename: '.workbuddy-ai-checkin.json',
+    checkinSupported: false,
     usageFilename: '.workbuddy-ai-usage.json',
     catalogFilename: '.workbuddy-ai-catalog.json',
     visibilityFilename: '.workbuddy-ai-model-visibility.json',

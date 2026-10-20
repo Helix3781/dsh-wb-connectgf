@@ -380,4 +380,50 @@ describe('probe control route', () => {
   it('mints a distinct key per call', () => {
     expect(createProbeKey()).not.toBe(createProbeKey())
   })
+
+  /**
+   * The check-in actions. Both are writes on the same key-guarded route as the
+   * rest, and both name what they act on rather than inferring it.
+   */
+  it('checks one named account in, and refuses a request that names none', async () => {
+    const checked: string[] = []
+    const { origin, key } = await mount({
+      checkIn: async accountId => { checked.push(accountId); return { state: 'checked-in' } },
+    })
+    const ok = await post(origin, { action: 'check-in', account: 'uid-a:ent' }, { 'X-WorkBuddy-Probe-Key': key })
+    expect(ok.status).toBe(200)
+    expect(ok.body['state']).toBe('checked-in')
+    expect(checked).toEqual(['uid-a:ent'])
+
+    const missing = await post(origin, { action: 'check-in' }, { 'X-WorkBuddy-Probe-Key': key })
+    expect(missing.status).toBe(400)
+  })
+
+  it('reports a refused check-in with the upstream own reason', async () => {
+    const { origin, key } = await mount({
+      checkIn: async () => ({ state: 'failed', reason: 'code 14001: restricted' }),
+    })
+    const answer = await post(origin, { action: 'check-in', account: 'uid-a:ent' }, { 'X-WorkBuddy-Probe-Key': key })
+    expect(answer.status).toBe(200)
+    expect(answer.body['state']).toBe('failed')
+    expect(String(answer.body['reason'])).toContain('restricted')
+  })
+
+  it('persists the check-in switch, and requires a boolean', async () => {
+    const seen: boolean[] = []
+    const { origin, key } = await mount({
+      setCheckinAuto: async enabled => { seen.push(enabled); return { state: 'updated' } },
+    })
+    expect((await post(origin, { action: 'set-checkin-auto', enabled: true }, { 'X-WorkBuddy-Probe-Key': key })).status).toBe(200)
+    expect((await post(origin, { action: 'set-checkin-auto', enabled: false }, { 'X-WorkBuddy-Probe-Key': key })).status).toBe(200)
+    expect(seen).toEqual([true, false])
+    // A string is not a boolean: "false" is truthy and would flip the switch on.
+    expect((await post(origin, { action: 'set-checkin-auto', enabled: 'false' }, { 'X-WorkBuddy-Probe-Key': key })).status).toBe(400)
+  })
+
+  it('reports the check-in actions as unsupported on a host that has no seam', async () => {
+    const { origin, key } = await mount()
+    expect((await post(origin, { action: 'check-in', account: 'a' }, { 'X-WorkBuddy-Probe-Key': key })).status).toBe(404)
+    expect((await post(origin, { action: 'set-checkin-auto', enabled: true }, { 'X-WorkBuddy-Probe-Key': key })).status).toBe(404)
+  })
 })

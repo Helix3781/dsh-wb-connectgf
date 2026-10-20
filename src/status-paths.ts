@@ -79,7 +79,24 @@ export const WORKBUDDY_AI_ACCOUNT_PATH = '/plugins/dsh-workbuddy-connect-functy/
  * at startup (see {@link module:dsh-workbuddy-connect}); this constant is the
  * one place the value is written down.
  */
-export const WORKBUDDY_PROFILE_ENTRY_ID = 'llm-workbuddy'
+/**
+ * The Loader row this plugin's settings live under.
+ *
+ * **Fork-specific, and it must stay that way.** Upstream
+ * (`dsh-workbuddy-connect`) declares its own row as `llm-workbuddy`, and both
+ * plugins' bundle patches use `insert`, so a profile carrying both ends up with
+ * TWO rows of that id. The host's `configEditor.entries()` drops a duplicated id
+ * as unaddressable, and its write-back check resolves the id with a plain
+ * `.find()` that takes the FIRST match — upstream's, which carries no config.
+ * Every settings write from this plugin was then refused with
+ * "Configuration for \"llm-workbuddy\" is overridden by a home patch or
+ * command-line overlay", which reads like a patch conflict and is really an id
+ * collision (measured 2026-10-20 on a profile running both plugins).
+ *
+ * A distinct id keeps the two rows addressable independently, so this plugin
+ * writes its own config and upstream keeps writing its own.
+ */
+export const WORKBUDDY_PROFILE_ENTRY_ID = 'llm-workbuddy-functy'
 
 /** One model's recorded probe observation, as the card displays it. */
 export interface WorkBuddyWebProbeModel {
@@ -114,12 +131,14 @@ export interface WorkBuddyProbeAction {
    * `set-sidebar-credit-visible`, `set-composer-credit-visible` and
    * `set-probe-control-visible` persist how the sidebar's own card is drawn,
    * whether it is drawn at all, whether the composer dock draws its credit badge,
-   * and whether the composer keeps its reasoning-detection control.
+   * and whether the composer keeps its reasoning-detection control;
+   * `check-in` claims one account's daily check-in now, and `set-checkin-auto`
+   * persists whether the plugin does that on its own once a day.
    *
    * Every one of them is a write, which is why they share this route's
    * in-process key and loopback guards rather than the read-only status GET.
    */
-  action: 'probe' | 'clear' | 'refresh' | 'set-maximum-context-window' | 'set-model-visibility' | 'set-model-allowlist' | 'open-link' | 'set-sidebar-credit-style' | 'set-sidebar-credit-visible' | 'set-composer-credit-visible' | 'set-probe-control-visible'
+  action: 'probe' | 'clear' | 'refresh' | 'set-maximum-context-window' | 'set-model-visibility' | 'set-model-allowlist' | 'open-link' | 'set-sidebar-credit-style' | 'set-sidebar-credit-visible' | 'set-composer-credit-visible' | 'set-probe-control-visible' | 'check-in' | 'set-checkin-auto'
   /** Target model id; required for `probe` and `set-model-visibility`. */
   model?: string
   /**
@@ -350,6 +369,17 @@ export interface WorkBuddyWebAccount {
    */
   creditsUsed?: number
   /**
+   * When this cycle's allowance returns, epoch ms.
+   *
+   * The CN enterprise endpoint states it as `cycleResetTime`; a package list
+   * would state a per-package end time, which this plugin does not surface. The
+   * card states "resets in …" beside the balance — a figure that is about to
+   * lapse reads differently from one that lasts a month, and the two are
+   * indistinguishable without it. Absent when the upstream stated none: an
+   * absent reset is not a claim that the allowance never returns.
+   */
+  creditsResetAtMs?: number
+  /**
    * What this plugin has sent through the account, counted from the answers it
    * relayed (see the usage store). Absent until at least one request landed.
    */
@@ -552,6 +582,35 @@ export const WORKBUDDY_COMPOSER_CREDIT_VISIBLE_DEFAULT = true
 export const WORKBUDDY_PROBE_CONTROL_VISIBLE_DEFAULT = true
 
 /** The JSON document the plugin card renders. */
+/**
+ * One account's check-in state, as the settings page renders it.
+ *
+ * `day` and `atMs` are what the record store holds; `state` is what the LAST run
+ * reported for this account. They answer different questions — "when did this
+ * account last claim a day" versus "what happened the last time we tried" — and
+ * a row that showed only one of them would either hide a failure or imply a
+ * check-in that never landed.
+ */
+export interface WorkBuddyWebCheckinRow {
+  accountId: string
+  /** The local day of the last successful claim, when there is one. */
+  day?: string
+  /** Epoch ms of that claim. */
+  atMs?: number
+  /** What the most recent attempt did, when one has run in this process. */
+  state?: 'checked-in' | 'already' | 'failed' | 'skipped'
+  /** Why it failed or was skipped. */
+  reason?: string
+}
+
+/** The check-in section of a status document. */
+export interface WorkBuddyWebCheckin {
+  /** Whether the plugin claims check-ins on its own. */
+  auto: boolean
+  /** Per-account rows, in pool order. */
+  rows: readonly WorkBuddyWebCheckinRow[]
+}
+
 export type WorkBuddyWebStatus =
   | {
     status: 'signed-out'
@@ -571,6 +630,8 @@ export type WorkBuddyWebStatus =
     accounts?: WorkBuddyWebAccounts
     /** In-process key authorizing probe and account writes. */
     probeKey?: string
+    /** The check-in section, when this variant keeps one. */
+    checkin?: WorkBuddyWebCheckin
   } & WorkBuddyWebPreferences
   | {
     status: 'signed-in'
@@ -610,5 +671,7 @@ export type WorkBuddyWebStatus =
      * loopback guard); it is never persisted and rotates per process.
      */
     probeKey?: string
+    /** The check-in section for this variant's pool. */
+    checkin?: WorkBuddyWebCheckin
   } & WorkBuddyWebPreferences
   | { status: 'error'; message: string }

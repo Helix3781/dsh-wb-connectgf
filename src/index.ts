@@ -23,6 +23,8 @@ import { WorkBuddyCredentialStore, type WorkBuddyCredential, type WorkBuddyStore
 import { atRestKeyProviderFor, WorkBuddyAtRestKeyProvider } from './desktop-credential-protection.ts'
 import { WorkBuddyAccountPool, credentialAccountId, credentialOf } from './account-pool.ts'
 import { WorkBuddyAccountService } from './account-service.ts'
+import { WorkBuddyCheckinService } from './checkin-service.ts'
+import { createWorkBuddyCheckinStore, workbuddyCheckinPath } from './checkin-store.ts'
 import { registerWorkBuddyAccountRoute } from './account-route.ts'
 import { WorkBuddyQrLogin } from './qr-login.ts'
 import { WorkBuddyRotation } from './rotation.ts'
@@ -42,8 +44,14 @@ import { createProbeKey, keyMatches, registerWorkBuddyProbeRoute } from './probe
 import { openWorkBuddyLink } from './open-link.ts'
 import type { WorkBuddyModelInfo } from './catalog.ts'
 import { isWorkBuddySidebarCreditStyle, WORKBUDDY_PROFILE_ENTRY_ID } from './status-paths.ts'
-import type { WorkBuddySidebarCreditStyle, WorkBuddyWebCatalog, WorkBuddyWebProbeSection } from './status-paths.ts'
+import type {
+  WorkBuddySidebarCreditStyle,
+  WorkBuddyWebCatalog,
+  WorkBuddyWebCheckin,
+  WorkBuddyWebProbeSection,
+} from './status-paths.ts'
 import { WORKBUDDY_PREFERENCES, statedPreferences } from './preferences.ts'
+import { hostResolvesPaths, hostSettings } from './host-capabilities.ts'
 import type { WorkBuddyPreferenceConfig } from './preferences.ts'
 import { clearHostHeartbeat, writeHostHeartbeat } from './host-heartbeat.ts'
 import { WORKBUDDY_CONNECT_VERSION } from './version.ts'
@@ -204,8 +212,18 @@ export {
   type WorkBuddyHostHeartbeat,
 } from './host-heartbeat.ts'
 
-/** Stable Cordis plugin name. */
-export const name = 'llm-workbuddy'
+/**
+ * Stable Cordis plugin name.
+ *
+ * **Fork-specific.** Upstream (dsh-workbuddy-connect) exports the same string,
+ * and the Loader keys plugin instances by it: with both installed, the second
+ * one to load collides with the first instead of mounting beside it, and the
+ * browser half's module identity (which the host derives from this name) stops
+ * matching its own rows. The pair was measured on 2026-10-20 — the settings
+ * page rendered raw locale keys and a chat turn could not be sent on a profile
+ * carrying both plugins.
+ */
+export const name = 'dsh-workbuddy-connect-functy'
 
 /** The model registry required before the provider can register. */
 export const inject = ['llm']
@@ -412,6 +430,13 @@ interface VariantRuntime {
    * another, and switching accounts switches the whole list in one read.
    */
   visibilityStore: WorkBuddyVisibilityStore
+  /**
+   * The daily check-in: its record and its schedule.
+   *
+   * Per variant because the pool is: two products' accounts live in separate pools
+   * and their records must not answer for each other.
+   */
+  checkin: WorkBuddyCheckinService
   /** Per-account request tally, filled by the rotation as answers arrive. */
   usageStore: WorkBuddyUsageStore
   /**
@@ -507,12 +532,6 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-interface SettingsServiceSeam {
-  /** Declare this instance's auto-form policy (a disposer). */
-  configure?(presentation: { auto?: boolean }, owner?: unknown): () => void
-  /** Merge editable fields into an entry's config. */
-  update?(ns: string, patch: object, expectedRevision?: number): Promise<void>
-}
 
 /** Read the configured explicit auth-file path for one variant. */
 function configuredAuthFile(config: Config, variant: WorkBuddyVariant): string | undefined {
@@ -598,6 +617,17 @@ function createVariantRuntime(
     path: workbuddyUsagePath(variant.usageFilename),
     onWriteError: error => { warn('dsh-workbuddy-connect: usage tally could not be written', error) },
   })
+  // The daily check-in: one record file per variant (two products' accounts have
+  // ids in the same namespace, so a shared file would let one answer for the
+  // other), and a scheduler that reads the preference live — a settings write
+  // therefore applies at the next wake-up without rebuilding anything.
+  const checkin = new WorkBuddyCheckinService({
+    variantId: variant.id,
+    pool,
+    store: createWorkBuddyCheckinStore(workbuddyCheckinPath(variant.checkinFilename)),
+    enabled: () => current().checkinAuto === true,
+    logger: { warn, info: warn },
+  })
   const probeService = new WorkBuddyProbeService({
     store: probeStore,
     catalog,
@@ -626,6 +656,7 @@ function createVariantRuntime(
     qr,
     probeStore,
     probeService,
+    checkin,
     savedCatalogs,
     visibilityStore,
     usageStore,
@@ -640,6 +671,30 @@ function createVariantRuntime(
     invalidate: () => {},
     registered: false,
   }
+}
+
+/**
+ * The check-in section one variant's status document carries.
+ *
+ * Rows follow POOL order, so the page can render them beside the account rows
+ * without matching ids. A record and a run outcome are merged per account
+ * because they answer different halves of one question: the record says WHEN
+ * this account last claimed a day, the run says what the most recent attempt
+ * did — and a failed attempt must not look like a claim.
+ */
+function checkinSection(runtime: VariantRuntime, config: Config): WorkBuddyWebCheckin {
+  const last = runtime.checkin.last
+  const rows = runtime.pool.list().map(account => {
+    const record = runtime.checkin.record(account.id)
+    const run = last?.accounts.find(row => row.accountId === account.id)
+    return {
+      accountId: account.id,
+      ...record === undefined ? {} : { day: record.day, atMs: record.atMs },
+      ...run === undefined ? {} : { state: run.state },
+      ...run?.reason === undefined ? {} : { reason: run.reason },
+    }
+  })
+  return { auto: config.checkinAuto === true, rows }
 }
 
 /** The catalog provenance the card displays. */
@@ -786,7 +841,10 @@ async function startVariant(ctx: Context, runtime: VariantRuntime): Promise<bool
       resolveAttachments: () => ctx.get('attachments'),
       resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(
         attachments,
-        hostPath => ctx.get('fs')?.processPathFromHostPath(hostPath),
+        // Probed rather than assumed: a profile may mount no `fs` service at all,
+        // and only one that carries `processPathFromHostPath` can translate a host
+        // path. See ./host-capabilities for the per-generation table.
+        hostPath => (hostResolvesPaths(ctx.get('fs')) ? ctx.get('fs')?.processPathFromHostPath(hostPath) : undefined),
         ref,
       ),
       observe: modelId => probeService.recordFor(modelId),
@@ -972,6 +1030,14 @@ export function apply(ctx: Context, config: Config): void {
   /** Writes whether the composer keeps its reasoning-detection control. */
   let setProbeControlVisible: ((visible: boolean) => Promise<{ state: string; reason?: string }>) | undefined
   /**
+   * Writes whether the plugin claims the daily check-in on its own.
+   *
+   * Undefined on a host with no settings service, exactly like the four above:
+   * the status document then carries no value and the settings page renders no
+   * switch, rather than one that could not be saved.
+   */
+  let setCheckinAuto: ((enabled: boolean) => Promise<{ state: string; reason?: string }>) | undefined
+  /**
    * Whether the host mounted a settings service this plugin can write through.
    * Decided once, inside the `settings` inject. The maximum-context getter
    * answers `undefined` while this is false, and a status document without the
@@ -1073,6 +1139,13 @@ export function apply(ctx: Context, config: Config): void {
         // else on the page can tell it what the settings say — and so the very
         // next read after a write already reflects it, without a reload.
         preferences: () => statedPreferences(current()),
+        // The check-in section: whether auto is on, plus each account's last
+        // claim and what the most recent run did. Assembled per read, because a
+        // manual check-in must be visible on the very next poll.
+        // Only for a product that HAS a check-in: the international gateway has
+        // no such endpoint, and offering a section whose button always fails is
+        // worse than offering nothing. See WorkBuddyVariant.checkinSupported.
+        ...runtime.variant.checkinSupported ? { checkin: () => checkinSection(runtime, current()) } : {},
         emptyReason: () => desktopReadError.get(runtime.variant.id),
         store: runtime.store,
         probeKey,
@@ -1211,6 +1284,26 @@ export function apply(ctx: Context, config: Config): void {
         // one dialog layout, and the page hands this route whatever link the
         // host minted. Opening it is the host's job because only the host can
         // ask the operating system — see the module for why the page cannot.
+        // The daily check-in, on demand, and only for a product that HAS one:
+        // the international gateway retired the endpoint, so a button there
+        // could only ever fail. The account is named so the route never has to
+        // guess which pool member the click meant.
+        ...runtime.variant.checkinSupported ? {
+          checkIn: async accountId => {
+            const result = await runtime.checkin.checkOne(accountId)
+            if (result.state === 'failed') return { state: 'failed', reason: result.reason ?? 'check-in failed' }
+            // A check-in changes the balance, so the next status read must not
+            // serve the cached figure.
+            runtime.accounts.invalidateCredits(accountId)
+            return { state: result.state }
+          },
+        } : {},
+        setCheckinAuto: async enabled => {
+          if (setCheckinAuto === undefined) return { state: 'failed', reason: 'settings are unavailable' }
+          const result = await setCheckinAuto(enabled)
+          if (result.state === 'updated') ctx.emit('llm/adapters-updated')
+          return result
+        },
         openExternal: url => openWorkBuddyLink(url),
         setModelVisibility: async (modelId, visible, expectedAccount) => {
           // Refused rather than bucketed: a signed-out variant, or a
@@ -1293,13 +1386,15 @@ export function apply(ctx: Context, config: Config): void {
   //    on every volatile update \u2014 which is what makes a saved preference reach
   //    the very next request instead of the next restart.
   ctx.inject(['settings'], settingsCtx => {
-    const forms = settingsCtx.settings as SettingsServiceSeam
-    if (typeof forms.configure !== 'function') {
-      ctx.logger.warn('dsh-workbuddy-connect: host settings service has no configure API; the store-backed preferences are read-only')
+    // Which settings generation this host speaks, decided by probing the service
+    // rather than by reading a version number: see ./host-capabilities.
+    const capabilities = hostSettings(settingsCtx.settings)
+    if (capabilities.settings !== 'forms' || capabilities.write === undefined || capabilities.policy === undefined) {
+      ctx.logger.warn('dsh-workbuddy-connect: host settings service exposes no writable form API; the store-backed preferences are read-only')
       return
     }
-    const configure = forms.configure.bind(forms)
-    ctx.effect(() => configure({ auto: false }, ctx.fiber), 'dsh-workbuddy-connect: settings page policy')
+    const { write, policy } = capabilities
+    ctx.effect(() => policy.configure({ auto: false }, ctx.fiber), 'dsh-workbuddy-connect: settings page policy')
     settingsAvailable = true
 
     // A settings write commits in place and notifies the owning fiber. Every
@@ -1333,11 +1428,11 @@ export function apply(ctx: Context, config: Config): void {
       return mine?.options.id
     }
     setMaximumContextWindow = async enabled => {
-      if (forms.update === undefined) {
+      if (write === undefined) {
         return { state: 'failed', reason: 'this host does not accept settings writes' }
       }
       try {
-        await forms.update(entryId() ?? PROFILE_ENTRY_ID, { useMaximumContextWindow: enabled })
+        await write.update(entryId() ?? PROFILE_ENTRY_ID, { useMaximumContextWindow: enabled })
       } catch (error: unknown) {
         return { state: 'failed', reason: error instanceof Error ? error.message.slice(0, 300) : String(error) }
       }
@@ -1346,14 +1441,14 @@ export function apply(ctx: Context, config: Config): void {
     // The sidebar style is the same kind of write: a config field the next status
     // read reflects, which is what redraws the card without a reload.
     setSidebarCreditStyle = async style => {
-      if (forms.update === undefined) {
+      if (write === undefined) {
         return { state: 'failed', reason: 'this host does not accept settings writes' }
       }
       if (!isWorkBuddySidebarCreditStyle(style)) {
         return { state: 'failed', reason: 'unknown sidebar credit style' }
       }
       try {
-        await forms.update(entryId() ?? PROFILE_ENTRY_ID, { sidebarCreditStyle: style })
+        await write.update(entryId() ?? PROFILE_ENTRY_ID, { sidebarCreditStyle: style })
       } catch (error: unknown) {
         return { state: 'failed', reason: error instanceof Error ? error.message.slice(0, 300) : String(error) }
       }
@@ -1363,11 +1458,11 @@ export function apply(ctx: Context, config: Config): void {
     // No client-side validation to do — a boolean from the wire is already the
     // whole value domain, and the route refused anything that was not one.
     setSidebarCreditVisible = async visible => {
-      if (forms.update === undefined) {
+      if (write === undefined) {
         return { state: 'failed', reason: 'this host does not accept settings writes' }
       }
       try {
-        await forms.update(entryId() ?? PROFILE_ENTRY_ID, { sidebarCreditVisible: visible })
+        await write.update(entryId() ?? PROFILE_ENTRY_ID, { sidebarCreditVisible: visible })
       } catch (error: unknown) {
         return { state: 'failed', reason: error instanceof Error ? error.message.slice(0, 300) : String(error) }
       }
@@ -1376,11 +1471,11 @@ export function apply(ctx: Context, config: Config): void {
     // Same write again, for the composer badge: a different surface, so a
     // different field, but the same boolean domain and the same refusal shape.
     setComposerCreditVisible = async visible => {
-      if (forms.update === undefined) {
+      if (write === undefined) {
         return { state: 'failed', reason: 'this host does not accept settings writes' }
       }
       try {
-        await forms.update(entryId() ?? PROFILE_ENTRY_ID, { composerCreditVisible: visible })
+        await write.update(entryId() ?? PROFILE_ENTRY_ID, { composerCreditVisible: visible })
       } catch (error: unknown) {
         return { state: 'failed', reason: error instanceof Error ? error.message.slice(0, 300) : String(error) }
       }
@@ -1388,11 +1483,25 @@ export function apply(ctx: Context, config: Config): void {
     }
     // The third of the composer switches, written the same way.
     setProbeControlVisible = async visible => {
-      if (forms.update === undefined) {
+      if (write === undefined) {
         return { state: 'failed', reason: 'this host does not accept settings writes' }
       }
       try {
-        await forms.update(entryId() ?? PROFILE_ENTRY_ID, { probeControlVisible: visible })
+        await write.update(entryId() ?? PROFILE_ENTRY_ID, { probeControlVisible: visible })
+      } catch (error: unknown) {
+        return { state: 'failed', reason: error instanceof Error ? error.message.slice(0, 300) : String(error) }
+      }
+      return { state: 'updated' }
+    }
+    // Same write, same shape. One preference for the whole plugin: there is one
+    // clock and one pool policy, so a per-product switch would only let the two
+    // disagree about whether a bonus is being claimed.
+    setCheckinAuto = async enabled => {
+      if (write === undefined) {
+        return { state: 'failed', reason: 'this host does not accept settings writes' }
+      }
+      try {
+        await write.update(entryId() ?? PROFILE_ENTRY_ID, { checkinAuto: enabled })
       } catch (error: unknown) {
         return { state: 'failed', reason: error instanceof Error ? error.message.slice(0, 300) : String(error) }
       }
@@ -1762,5 +1871,13 @@ export function apply(ctx: Context, config: Config): void {
     const timer = setInterval(() => { void syncAll() }, credentialPollMs())
     timer.unref?.()
     timers.push(timer)
+
+    // The daily check-in. One scheduler per variant, each with its own record
+    // file; a wake-up costs nothing until the local day turns. Disposed with the
+    // rest of this plugin's timers.
+    for (const runtime of runtimes) {
+      if (!runtime.variant.checkinSupported) continue
+      ctx.effect(() => runtime.checkin.start(), `dsh-workbuddy-connect: ${runtime.variant.id} check-in`)
+    }
   })
 }

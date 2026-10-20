@@ -28,6 +28,7 @@
     "tests/electron-assist.spec.ts",
     "tests/qr-code.spec.ts",
     "tests/credit-badge.spec.ts",
+    "tests/account-summary.spec.ts",
     "tests/settings-page.spec.ts",
     "tests/client-open-external.spec.ts",
     "tests/open-link.spec.ts",

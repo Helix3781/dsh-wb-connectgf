@@ -135,6 +135,21 @@ export interface PanelView {
    * taking a surface away on an upgrade is not something a missing key may do.
    */
   composerCreditVisible: boolean
+  /**
+   * Whether any sweep has ever completed, i.e. whether the preferences above are
+   * KNOWABLE yet.
+   *
+   * Before the first answer arrives the snapshot is empty, and every preference
+   * falls back to its default — which for `creditVisible` is "present". The
+   * sidebar therefore drew the card, then removed it the moment the real
+   * document landed: a one-frame flash of a card the user had switched OFF.
+   *
+   * Surfaces gate on this so "we have not asked yet" draws nothing, rather than
+   * guessing a default and correcting it in public. A sweep that finishes with
+   * every route failing still counts (the store records `fetchedAt` regardless),
+   * so a broken host keeps its card and the dashboard stays reachable.
+   */
+  preferencesSettled: boolean
 }
 
 /** Inputs the projection needs beyond the snapshot itself. */
@@ -285,6 +300,7 @@ export function buildPanelView(options: BuildPanelViewOptions): PanelView {
     creditStyle: creditStyleOf(snapshot),
     creditVisible: creditVisibleOf(snapshot),
     composerCreditVisible: composerCreditVisibleOf(snapshot),
+    preferencesSettled: snapshot.fetchedAt > 0,
   }
 }
 

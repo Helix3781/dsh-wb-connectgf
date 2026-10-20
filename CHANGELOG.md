@@ -2,6 +2,107 @@
 
 版本号即 git tag，遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.13.17] — 2026-10-20
+
+> **此次更新跨度较大，并未经过充分测试，更新后可能出现显示问题以及其他更严重的问题。**
+>
+> 建议升级前备份 `~/.dsh`（尤其是 `.workbuddy-*.json` 状态文件与 `profiles/<profile>/cordis.patch.yml`），出问题时便于回退。
+
+
+### 1. 限流状态直接显示剩余时间
+
+账号行的状态 chip 原来写「限流中」，现在写「4 小时」（数字与单位间有空格）。原因（额度耗尽）保留并与时间并列：「额度耗尽 · 2 小时」——那一个词决定用户是等待还是换号，只给时间就丢了这层信息。
+
+同时删掉灰字里重复的倒计时：之前同一个行里既写「限流中 · 7 分钟后重试」，灰字又写「7 分钟后恢复」。现在等待时间只在 chip 里出现一次；灰字只保留**额度周期重置**（`creditsResetAtMs`），那是另一件事——bench 解除后它仍在。
+
+### 2. 改设置为什么慢（写入其实一直失败）
+
+实测出来两件事，其中一件是真 bug：
+
+- **写入返回 `state: failed`**：`Configuration for "llm-workbuddy" is overridden by a home patch or command-line overlay`。宿主 `config-editor` 在写入前会把结果与 profile 的 patch 层比对，而本机 `cordis.patch.yml` 给 `llm-workbuddy` 写了 `config:`（`probeControlVisible` / `sidebarCreditVisible`），于是每次 `forms.update` 都被拒。这是 profile 配置问题，不是代码问题 —— 要改的是把这两个字段从 patch 里删掉，或接受 patch 覆盖即写不进。
+- **界面仍要等**：旧实现在写之后 `await readAll()`，即两版状态路由各读一遍；实测 CN 0.35s、国际版 **1.3s**，且每个账号可能触发一次 billing。
+
+改动：
+- 写入改为**先画后确认**：点击瞬间把该开关的值放到本地（`writtenPreferences`），失败则回滚并显示原值；成功则保留，等页面自己的分钟轮询校正。
+- 写入成功后**不再 `readAll()`**：这次写只改了一个布尔/枚举，其余事实没有变化；侧栏仍收到 `refreshPanel()`（那是用户正看着的地方）。
+- 不再置 `busy`：开关不会因为一次重读而自我禁用，重复点击幂等。
+
+### 3. 侧栏卡片关闭状态下仍闪现一下
+
+根因：首帧快照为空，所有偏好回落到默认值，而 `sidebarCreditVisible` 的默认是 `true`，于是**关掉的卡片先被画出来**，等真实文档到达再消失。
+
+修法：视图新增 `preferencesSettled`（= `fetchedAt > 0`，即至少完成过一次轮询）。侧栏卡片与输入框徽标都先看这个标志——「还没问过」不画，而不是先猜一个默认值再当众纠正。轮询本身照常启动（gate 只影响画什么），一轮失败也仍算 settled，所以宿主挂掉时卡片还在、仪表盘仍可达。
+
+### 4. 多版本支持（当前从 Desktop 的 0.2.1-rc.2 起）
+
+新增两个模块，把「能不能装」和「能不能跑」分开：
+
+- `src/supported-hosts.ts`：支持矩阵（0.2.1-rc / 0.2.0-rc / 0.1.7-alpha 三行，每行记录对应的 pi-ai 代次与验证程度），并**由矩阵派生** peer range。测试把行与 `package.json` 的 peerDependencies 按集合比对，防止出现「表里加了、manifest 不认」这类上游踩过的坑（peer 钉死单个 prerelease 导致下一个版本装不上）。
+- `src/host-capabilities.ts`：运行期结构探测 —— 设置服务是 `configure`/`update` 还是旧的 `installSection`、`fs` 是否带 `processPathFromHostPath`。全部按宿主实际给的对象判断，不比对版本字符串；方法绑回原对象（0.2.x 实现依赖 `this`）。半残服务（只有 configure 没有 update）判为不可写，避免装出一个存不下的表单。
+- `index.ts` 的设置注入与图片路径翻译改用这两个探测。
+
+诚实说明：目前**只有 0.2.1-rc.2 一条线经过完整验证**（typecheck / 844+ 用例 / engine load / 两条状态路由 / 设置写入）。0.2.0-rc 与 0.1.7-alpha 是结构兼容（同代 API 形状），未另做构建验证——矩阵里逐行写明，不假装跑过。
+
+### 5. 自动签到
+
+按 `linguo2625469/workbuddy2api-panel` 验证过的线上行为实现（路径、请求头、拒绝标记都取自该实现）：
+
+- `src/checkin.ts`：`POST {billingBase}/v2/billing/meter/daily-checkin`（国际版先试无 `/v2` 前缀，404 再换），空 body `{}`，带 `X-User-Id` / `X-Enterprise-Id` / `X-Tenant-Id` / `X-Domain`。三种结局分开：`checked-in` / `already` / `failed`。「已签到」是**成功**而不是错误——否则第一次之后每次都像失败。仅 5xx 与传输失败重试（2s、4s 两次），4xx 与业务拒绝不重试。
+- `src/checkin-store.ts`：每变体一份记录（`.workbuddy-checkin.json` / `.workbuddy-ai-checkin.json`），按本地日 `YYYY-MM-DD` 判定「今天签过没有」。记录不做成布尔值：日期才是那个问题的答案，也扛得住改时区。
+- `src/checkin-service.ts`：每 15 分钟唤醒一次，唤醒本身零成本，直到本地日翻页才真的发请求。跳过停用与登录失效的账号；失败只警告，**不 bench 账号、不动登录态**——签到是赠品，不是用户请求的请求。手动 `checkOne` 不受记录限制。
+- 接线：`checkinAuto` 偏好（**默认关**，因为它会替用户花一次请求）、路由动作 `check-in` / `set-checkin-auto`、状态文档新增 `checkin` 段（每账号：记录日 + 上次结果）、设置页新增「每日签到」分组（一个开关 + 每账号一行 + 「立即签到」）。
+
+### 验证
+
+- `pnpm run typecheck` / `pnpm run test`（**63 文件 / 850 用例**）/ `pnpm run build` / `pnpm run test:engine` 全绿。
+- 新增 6 个测试文件：`supported-hosts`、`host-capabilities`、`checkin`、`checkin-store`、`checkin-service`，以及 settings-page / probe-route 里的签到与乐观写回归。
+- 顺带：`0.13.15` 的依赖代次跟随（`0.2.1-rc.2` + pi-ai `1.1.0`）在本版继续保持，peer 由矩阵派生为三线并集。
+## [0.13.15] — 2026-10-19
+
+**修 issue #3：暂时为空的账号池被报成 401 session_dead**，宿主据此判 AUTH 并显示「API 密钥无效 / 未登录」，而 token 完全有效、账号一分钟后自愈。
+
+根因在 `src/rotation.ts` 的 `noAccountResult()`：它把「池子里现在没人可用」一律映射成 `kind: session_dead` + `status: 0`，而 `KIND_STATUS.session_dead = 401`，shim 于是回 401 `not_signed_in` —— 宿主的 `classifyPiAiError` 把它归为不可重试的 AUTH。
+
+issue 里的建议改法是「一律 429 + Retry-After: 60」。那会把反向的误判带上：池子真的为空、或所有账号被用户停用/登录失效时，那是**登录问题**，应当请用户去登录，而不是让宿主无限重试。所以按「池子为什么空」分类：
+
+- **有成员能自己回来**（被限流 bench，`cooldown.untilMs` 在未来）→ `soft_rate` / 429，`Retry-After` 取**最早**回来的那个账号的剩余秒数（不是写死 60），宿主于是启动自己的退避重试。
+- **能自己回来的成员全是额度耗尽**（`cooldown.reason === 'credit'`）→ `hard_credit` / 402：同样自愈，但一秒后重试只会再吃一次拒绝，交还给让用户换账号/等额度。
+- **没有成员能自己回来**（池为空 / 全被停用 / 全 session_dead）→ 仍是 `session_dead` / 401，并且文案分开：空池说「未登录，请登录一次或添加账号」，全被禁用说「N 个账号均已停用或登录失效，请重新启用或登录」。
+
+同时修掉一处会误导排查的输出：`status: 0` 表示**根本没有发上游请求**，旧代码仍在错误文案里拼 `(http 0)`，读起来像一个真实但奇怪的上游状态。现在 0 不再带状态注记。
+
+新增回归（共 7 例）：
+- `tests/rotation.spec.ts`：限流池 → `soft_rate` 且 `Retry-After` 有界、额度池 → `hard_credit`、全停用 → `session_dead` 且无 `Retry-After`、空池 → 登录提示；并镜像宿主的 `\b(?:401|403)\b` 启发式，断言合成的错误文案不会踩中它。
+- `tests/shim.spec.ts`：把三类合成失败真的走一遍 HTTP，断言状态码 429 / 402 / 401、`Retry-After` 头的存在与缺失、以及文案里不再出现 `http 0`。
+
+顺带跟随宿主代次（上一版遗留）：`devDependencies` 的 `@deepseek-ai/dsh-*` 全部升到 `0.2.1-rc.2`、`@earendil-works/pi-ai` 升到 `1.1.0`（与 DSH `0.2.1-rc.2` 宿主同代）、`cordis ^4.0.5` / `cosmokit 1.8.6` / `schemastery ^3.18.5`；`pi-ai-guard` 的期望版本同步为 `1.1.0`。装到本机 Desktop profile 后实际加载为 `0.13.14` 时已验证路由可用，本版在此基础上继续。
+## [0.13.14] — 2026-10-18
+
+**同步上游 0.7.8 / 重写设置页账号区。** 上游差异是逐条对着上游 commit 在本地源码里核过的，只补本仓库真正缺的部分（其余早在此前的 cherry-pick 里就有）。
+
+### 同步上游（本仓库此前缺的）
+
+- **DSH 0.2.1-rc.2 支持**：peer range 从 `^0.1.7-alpha.1 || ^0.2.0-rc.1` 放宽成再并上 `^0.2.1-rc.1`。上游在 0.7.7/0.7.8 里把 peer 钉死成 `0.2.1-rc.2`（等于放弃旧线），本仓库保留并集 —— 与 0.13.1 的双线策略一致。
+- **`@deepseek-ai/dsh-atomic-write` 改为打进产物**（`tsdown.config.ts` 的 `alwaysBundle`），并从 peer 列表移除。桌面运行时只在 `app.asar` 内部引用这个包、不保证把它暴露在插件的解析路径上：本机实测 `require.resolve` 从这里返回 `MODULE_NOT_FOUND`，装好的插件 `lib/account-cli-*.js` 一 import 就整块加载失败（上游 0.7.6 正是这么炸的）。打包后 `node --input-type=module -e "import('./lib/index.js')"` 通过。
+- **`X-Conversation-*` 三件头**（上游 #139）：国际网关 2026-10-16 起对不带该族的 `/v2/chat/completions` 直接回 400 / 11128。每个请求现生成三个 UUID；CN 网关实测接受同样的头，所以两版都带，不分支。
+- **CN 目录请求补企业身份头**（上游 #123）：`/v3/config` 按账号身份分发名册，企业账号缺 `X-User-Id` + `X-Enterprise-Id` 会被静默返回个人名册（少一个模型）。只有当凭证两半都在时才发，国际端点保持原样。
+- **显示名去重**（上游 a7318d1）：CN 文档把 `hy3` 与 `hy3-x` 都叫 "Hy3"，两条价格不同的行在选择器里无法区分。解析后按 id 尾部补后缀（`hy3-x` → "Hy3-X"），id 不动。
+- **`reg.exe` 诊断按字节判定**（上游 3f5fbd9）：中文 Windows 上 `reg query` 的 stderr 是 cp936，按 UTF-8 解码得到的乱码匹配不上任何诊断，导致每个不存在的根都报「发现不完整」。改为先 UTF-8 再 GBK 解码，并把 `execFile` 的 `encoding` 设为 `buffer`。
+- **网关端口避开 fetch 黑名单**（上游 2bdeb0f）：`listen(0)` 可能拿到 fetch 标准禁止的端口，pi-ai 的每个请求都会以 `TypeError: fetch failed` 失败，而监听器看起来是好的。`src/loopback.ts` 新增 `FETCH_BLOCKED_PORTS` / `bindToUsablePort`，shim 改用它。
+
+### 设置页账号区重写
+
+- **同一产品的账号合并进一张卡片**（原来一个账号一张卡）：卡片头是产品名、`ready/total 可用` 和该池的合计额度；下面每账号一行。
+- **删掉展开交互**：账号行的所有数字直接显示在名字下方的灰色小字里 —— 剩余 / 上限、已用、请求数、输入/输出 token、缓存命中率、恢复时间（或令牌过期时间）。以前这些都在折叠区里，等于把「打开这个页面的理由」藏起来。
+- **决策类操作留在 ⋮ 菜单**（启用/停用、测试、重命名、删除），重命名与删除仍是行内表单/确认条，不用浏览器对话框。
+- **数据侧补齐 `creditsResetAtMs`**：`CreditEntry` 以前根本没收上游的 `used`（`creditsUsed` 字段一直是死字段），也不读 `cycleResetTime`。现在两者都进快照，账号行才有「已用」「x 小时后恢复」可显示。
+- **改用平台原子件**：状态点走 `StateDot`，标签走 `Tag`（本地那套四色胶囊删除），分段控件对齐平台度量（4px 内边距、`--dsw-radius-md/sm`）。
+- **清理**：删掉 3 个只被自己引用的共用件（`Disclosure` / `QuotaBar` / `CheckRow`）、`UsageStat`、81 条死文案与 60 余条死样式规则。
+
+### 验证
+
+- `pnpm run typecheck` / `pnpm run test`（57 文件 / 774 用例）/ `pnpm run build` / `pnpm run test:engine` 全绿。
+- 测试随新结构更新：账号行的断言从「展开后的统计格子」改成「灰字里的片段」；产品合计从独立卡片改成 card head 上的「剩余 / 上限」。
 ## [0.13.13] — 2026-10-17
 
 - **修复「探测思考强度」在 WorkBuddy AI 上恒定报 `sentinel status 400 (invalid_parameter_value)`**：探测的第二步（sentinel，一个不可能合法的 `reasoning_effort` 值）用来判断上游到底认不认这个参数，只有把它的 400 认成「effort 值非法」才会继续走第三步逐档扫描。Global 端点在 2026-10-01 的实测里回的是手写码 `model_param_invalid`，2026-10-17 起改成回上游 `InvalidParameter` 句子生成的 `invalid_parameter_value` —— 语义没变、码变了，于是 `INVALID_EFFORT_CODES.global` 不再命中，整次探测降级成 `unknown`，界面只显示「检测未完成」。
