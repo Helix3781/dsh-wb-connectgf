@@ -37,7 +37,7 @@ Compared with upstream **0.7.8** (2026-10-17). Features both trees share are not
 | UI | two legacy plugin cards in Settings | sidebar credit card + centre dashboard + settings section page (accounts merged into one card per product; balance / used / tokens / reset sit on the line under each name) |
 | Accounts | follows the desktop app's current sign-in | multi-account pool: rotation, QR, token, desktop adopt; a removed account is not swept back in; one card per product instead of one card per account |
 | Credit | on the settings card only | in the sidebar, remaining or used/total, can be hidden; each account row also states used, requests, tokens and when the allowance returns |
-| DSH | **`0.2.0-rc.2` only** | `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-rc.2` |
+| DSH | **`0.2.0-rc.2` only** | **`0.2.1-rc.x` only** (see “Supported DSH versions” below) |
 | Update notice | bottom-right reminder | not ported |
 | npm | `dsh-workbuddy-connect` | `dsh-workbuddy-connect-functy` |
 
@@ -83,8 +83,19 @@ Prerequisite: the WorkBuddy desktop app is installed and signed in (same for Wor
 > locale namespaces are `settings.workbuddy.functy` / `panel.workbuddy.functy`. Installing alongside
 > upstream `dsh-workbuddy-connect` fails to send messages because both claim provider id `workbuddy`;
 > keep only one of the two.
+### Supported DSH versions (**one line only**)
 
-**This release (`0.13.17`)** targets DSH `0.1.7-alpha.1`, `0.2.0-rc.1`, `0.2.0-rc.2` and `0.2.1-rc.2`. Later prereleases are not covered automatically.
+| Version | Supported | Why |
+|---|---|---|
+| `0.2.1-rc.x` (verified on `0.2.1-rc.2`) | ✅ **yes** | this build is compiled and tested against that kernel and `pi-ai 1.1.0` |
+| `0.2.0-rc.x` | ❌ no | its `dsh-llm-pi-ai` targets `pi-ai ^0.87.1`; two generations in one process make **every request fail with `PI_AI_ERROR` before any HTTP** |
+| `0.1.7-alpha.x` | ❌ no | same conflict; that line targets `pi-ai ^0.85.1` |
+| prereleases after `0.2.1` | ⚠️ untested | outside the peer range; needs an explicit change |
+
+`peerDependencies` are narrowed to `^0.2.1-rc.1` and `@earendil-works/pi-ai ^1.1.0`, so a wrong host makes the **package manager refuse the install** instead of leaving you with a plugin whose models cannot answer.
+
+
+**This release (`0.13.17`) supports DSH `0.2.1-rc.x` ONLY** (verified on `0.2.1-rc.2`). **Do not install it on `0.1.7-alpha.x` or `0.2.0-rc.x`** — see below.
 
 > **Do not install npm's `dsh-workbuddy-connect`.** That is the upstream package, a different code line.
 
@@ -161,7 +172,7 @@ CN by default; add `--provider workbuddy-ai` for the international product. `acc
 
 ## Known limitations
 
-- Verified on macOS Web / Desktop (DSH `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-rc.2`, Node 22+). Windows probes Local then Roaming AppData; WSL reads the mounted Windows profile first. If user names differ, set `WORKBUDDY_AUTH_FILE` / `WORKBUDDY_AI_AUTH_FILE`.
+- Verified on macOS Web / Desktop (DSH `0.2.1-rc.2`, Node 22+). Windows probes Local then Roaming AppData; WSL reads the mounted Windows profile first. If user names differ, set `WORKBUDDY_AUTH_FILE` / `WORKBUDDY_AI_AUTH_FILE`.
 - Sidebar display preferences need a host that can write settings; missing fields mean no switch is drawn.
 - The international catalog comes from the app's own interface and can break; the plugin then degrades to the last successful catalog, then the built-in roster.
 - International enterprise billing is unverified; a product with no credential no longer shows a model group.

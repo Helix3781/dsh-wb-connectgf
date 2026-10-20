@@ -1,26 +1,37 @@
 /**
- * Which DSH release this bundle supports, and how that is decided.
+ * Which DSH release this build supports, and how that is decided.
  *
- * The plugin has to run on more than one DSH generation, and there are two
- * different questions hiding behind "support":
+ * Two different questions hide behind "support":
  *
- * 1. **Can it be INSTALLED?** — answered by `peerDependencies`, which the
- *    package manager checks before a single line runs. Too narrow and the
- *    install is refused outright (upstream hit this: peers pinned to
- *    `0.2.1-rc.1` made `0.2.1-rc.2` uninstallable), too wide and the plugin
- *    loads onto a host it was never built against.
+ * 1. **Can it be INSTALLED?** — answered by `peerDependencies`, which the package
+ *    manager checks before a single line runs. Too narrow and the install is
+ *    refused outright (upstream hit this: peers pinned to `0.2.1-rc.1` made
+ *    `0.2.1-rc.2` uninstallable); too wide and the plugin loads onto a host it
+ *    was never built against.
  * 2. **Can it WORK?** — answered at runtime by probing the services the host
  *    actually handed over, never by comparing a version string. See
  *    ./host-capabilities.
  *
- * This module owns the first question and records the answer for the second, so
- * the two can be checked against each other. The list below is the tested
- * matrix: every entry has a build this repository actually produced and ran,
- * and `SUPPORTED_MINIMUM` / `SUPPORTED_LATEST` are derived from it rather than
- * written twice.
+ * ## Why the matrix is ONE line, not three
  *
- * Adding a generation is meant to be cheap: append a row, widen the peer range,
- * run the suite. Nothing else in the plugin names a version.
+ * An earlier revision listed `0.2.0-rc` and `0.1.7-alpha` as "structural
+ * compatibility". They are not supported, and the reason is the pi-ai generation:
+ *
+ * | DSH line | pi-ai its `dsh-llm-pi-ai` is built against |
+ * |---|---|
+ * | 0.1.7-alpha | `^0.85.1` |
+ * | 0.2.0-rc    | `^0.87.1` |
+ * | 0.2.1-rc    | `^1.1.0`  |
+ *
+ * This plugin pins `dependencies: pi-ai 1.1.0` and hands model objects to the
+ * host's `PiAiAdapter`. On a host whose `dsh-llm-pi-ai` was compiled against
+ * 0.85 or 0.87, two generations end up in one process and the first request dies
+ * with an opaque `PI_AI_ERROR` before any HTTP is sent — the failure 0.13.12
+ * fixed. Advertising those lines would be selling an install that cannot serve a
+ * single message, so the peer range says what is true.
+ *
+ * Adding a line therefore is not "append a row": it needs a build compiled and
+ * run against that line's pi-ai generation.
  *
  * @module dsh-workbuddy-connect/supported-hosts
  */
@@ -61,27 +72,24 @@ export const SUPPORTED_HOSTS: readonly SupportedHost[] = [
     line: '0.2.1-rc',
     packages: '^0.2.1-rc.1',
     piAi: '^1.1.0',
-    verified: 'DSH Desktop 0.2.1-rc.2: full suite, engine load, both status routes, settings writes',
-  },
-  {
-    line: '0.2.0-rc',
-    packages: '^0.2.0-rc.1',
-    piAi: '^0.87.1',
-    verified: 'structural: settings forms facade and every slot seat present; no pi-ai generation of its own is bundled',
-  },
-  {
-    line: '0.1.7-alpha',
-    packages: '^0.1.7-alpha.1',
-    piAi: '^0.85.1',
-    verified: 'structural: same forms facade, same slot seats; the settings page and provider cards degrade as on 0.2.x',
+    verified: 'DSH Desktop 0.2.1-rc.2 (kernel and pi-ai 1.1.0): full suite, engine load, both status routes, settings writes, check-in, model switch',
   },
 ]
+
 
 /** The oldest line still supported. */
 export const SUPPORTED_MINIMUM: string = SUPPORTED_HOSTS[SUPPORTED_HOSTS.length - 1]!.packages
 
 /** The line this build is compiled and tested against. */
 export const SUPPORTED_TESTED: string = SUPPORTED_HOSTS[0]!.packages
+
+/**
+ * The one pi-ai generation this build runs on.
+ *
+ * Re-exported from the matrix so the guard and the manifest cannot drift from
+ * what the table claims.
+ */
+export const SUPPORTED_PI_AI: string = SUPPORTED_HOSTS[0]!.piAi
 
 /**
  * The full peer range, derived from {@link SUPPORTED_HOSTS}.
@@ -94,3 +102,21 @@ export const SUPPORTED_PEER_RANGE: string = SUPPORTED_HOSTS.map(host => host.pac
 
 /** The pi-ai peer range, derived the same way. */
 export const SUPPORTED_PI_AI_RANGE: string = SUPPORTED_HOSTS.map(host => host.piAi).join(' || ')
+
+/**
+ * Lines this plugin deliberately does NOT support, with the reason.
+ *
+ * Kept as data rather than prose so the build can surface it verbatim: someone
+ * who installed on the wrong kernel needs the sentence that says so, not a vague
+ * "unsupported".
+ */
+export const UNSUPPORTED_HOSTS: readonly { line: string, reason: string }[] = [
+  {
+    line: '0.2.0-rc',
+    reason: 'its dsh-llm-pi-ai is built against pi-ai ^0.87.1; this plugin pins 1.1.0, and two generations in one process fail every request before any HTTP is sent',
+  },
+  {
+    line: '0.1.7-alpha',
+    reason: 'its dsh-llm-pi-ai is built against pi-ai ^0.85.1 — the same generation conflict as 0.2.0-rc',
+  },
+]

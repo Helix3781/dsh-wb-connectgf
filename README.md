@@ -37,7 +37,7 @@
 | 界面 | 设置里两张旧插件卡片 | 侧栏额度卡 + 中栏仪表盘 + 设置分区页（账号按产品合并成卡片，额度/用量/token/恢复时间都在名字下一行） |
 | 账号 | 跟桌面 App 当前这一份登录 | 多账号池：轮换、扫码、令牌、桌面凭证；删除后不会被 30 秒扫描加回来；同一产品的账号合并在一张卡片里 |
 | 额度 | 只在设置卡片上 | 侧栏一眼可见，可切「剩余 / 用量」样式，可关掉；设置页每账号显示剩余 / 已用 / 请求数 / token / 恢复时间 |
-| DSH | **只** `0.2.0-rc.2` | `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-rc.2` |
+| DSH | **只** `0.2.0-rc.2` | **只** `0.2.1-rc.x`（见下方「支持的 DSH 版本」） |
 | 更新提醒 | 右下角更新条 | 无（未移植） |
 | npm | `dsh-workbuddy-connect` | `dsh-workbuddy-connect-functy` |
 
@@ -81,8 +81,19 @@
 > 本版另有两处**不兼容变化**：entry id 改为 `llm-workbuddy-functy`；locale 命名空间改为
 > `settings.workbuddy.functy` / `panel.workbuddy.functy`。与上游 `dsh-workbuddy-connect` 同时安装会
 > 因 provider id 冲突导致发消息失败，请只保留一个。
+### 支持的 DSH 版本（**只此一条线**）
 
-**本版 `0.13.17`** 面向 DSH `0.1.7-alpha.1`、`0.2.0-rc.1`、`0.2.0-rc.2`、`0.2.1-rc.2`。再往后的 prerelease 不会自动覆盖。
+| 版本 | 是否支持 | 说明 |
+|---|---|---|
+| `0.2.1-rc.x`（实测 `0.2.1-rc.2`） | ✅ **支持** | 本版按这条线的 kernel 与 `pi-ai 1.1.0` 编译并实测 |
+| `0.2.0-rc.x` | ❌ 不支持 | 其 `dsh-llm-pi-ai` 基于 `pi-ai ^0.87.1`，与本版锁定的 `1.1.0` 冲突，进程里会同时存在两代 pi-ai，**请求在发出 HTTP 之前就报 `PI_AI_ERROR`** |
+| `0.1.7-alpha.x` | ❌ 不支持 | 同上，那一线基于 `pi-ai ^0.85.1` |
+| `0.2.1` 之后的 prerelease | ⚠️ 未验证 | peer range 不接受，需要显式改动 |
+
+`peerDependencies` 已收窄到 `^0.2.1-rc.1` 与 `@earendil-works/pi-ai ^1.1.0`，所以在装错的宿主上**包管理器会直接拒绝安装**，而不是装完才发现模型不能用。
+
+
+**本版 `0.13.17` 只支持 DSH `0.2.1-rc.x`**（实测 `0.2.1-rc.2`）。**不要装在 `0.1.7-alpha.x` 或 `0.2.0-rc.x` 上** —— 原因见下。
 
 > **不要装 npm 上的 `dsh-workbuddy-connect`。** 那是上游包，和本仓库不是同一条线。
 
@@ -159,7 +170,7 @@ dsh plugin --profile <profile> exec dsh-workbuddy-connect doctor
 
 ## 已知限制
 
-- 在 macOS 的 Web / Desktop 下验证过（DSH `0.1.7-alpha.1` / `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-rc.2`，Node 22+）。Windows 依次探 Local 与 Roaming AppData；WSL 优先读挂载的 Windows 用户目录。用户名不一致时用 `WORKBUDDY_AUTH_FILE` / `WORKBUDDY_AI_AUTH_FILE`。
+- 在 macOS 的 Web / Desktop 下验证过（DSH `0.2.1-rc.2`，Node 22+）。Windows 依次探 Local 与 Roaming AppData；WSL 优先读挂载的 Windows 用户目录。用户名不一致时用 `WORKBUDDY_AUTH_FILE` / `WORKBUDDY_AI_AUTH_FILE`。
 - 侧栏两个显示偏好要宿主能写设置；状态文档没有对应字段时，设置页不画开关。
 - 国际版模型目录来自 App 界面接口，属私有实现，可能失效；届时按「本账号上次成功目录 → 内置目录」降级。
 - 国际版企业计费未验证；无凭据时该版模型分组不再显示。

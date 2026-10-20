@@ -4,6 +4,21 @@
 
 ## [0.13.17] — 2026-10-20
 
+### 支持的 DSH 版本：**只有 `0.2.1-rc.x`**
+
+本版 `peerDependencies` 收窄为 `^0.2.1-rc.1` + `@earendil-works/pi-ai ^1.1.0`。**安装在 `0.1.7-alpha.x` 或 `0.2.0-rc.x` 上会被包管理器拒绝**，这是有意的：
+
+| DSH 线 | 其 `dsh-llm-pi-ai` 依赖的 pi-ai |
+|---|---|
+| `0.1.7-alpha` | `^0.85.1` |
+| `0.2.0-rc` | `^0.87.1` |
+| `0.2.1-rc` | `^1.1.0` ← 本版锁定这一代 |
+
+本插件把 pi-ai 作为真实依赖锁在 `1.1.0`，并把模型对象交给宿主的 `PiAiAdapter`。在 0.85/0.87 的宿主上，同一进程会存在两代 pi-ai，**第一个请求在发出 HTTP 之前就以 `PI_AI_ERROR` 失败**（0.13.12 修的就是这个）。所以旧线不是「未测试」，而是**装上也发不出消息**，peer range 如实说这件事。
+
+（`src/supported-hosts.ts` 里 `UNSUPPORTED_HOSTS` 以数据形式记录了这两条线及原因，`tests/supported-hosts.spec.ts` 钉住它。）
+
+
 > **此次更新跨度较大，并未经过充分测试，更新后可能出现显示问题以及其他更严重的问题。**
 >
 > 建议升级前备份 `~/.dsh`（尤其是 `.workbuddy-*.json` 状态文件与 `profiles/<profile>/cordis.patch.yml`），出问题时便于回退。
