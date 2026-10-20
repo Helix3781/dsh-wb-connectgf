@@ -79,11 +79,14 @@ declare function appUserAgent(version: string): string;
 /**
  * Compiled-in CN fallback for the `WorkBuddy/<v>` tokens.
  *
- * Observed on the CN desktop app installed here (research §3.1, verified
- * 2026-09-11); like the international fallback it is a shape requirement,
- * not a currency claim — the gateway has not been observed to branch on it.
+ * Re-measured from the installed `WorkBuddy.app` on 2026-10-20 (5.6.2). Like
+ * the international fallback it is a shape requirement, not a currency claim —
+ * the gateway has not been observed to branch on the number. It only applies
+ * when the bundle cannot be read at all, so it should still name a version a
+ * real client has shipped: an old number is the one thing a fallback can get
+ * wrong on the wire.
  */
-declare const FALLBACK_CN_APP_VERSION = "5.5.6";
+declare const FALLBACK_CN_APP_VERSION = "5.6.2";
 /**
  * Basename of the CN saved-version cache under `$DSH_HOME`.
  *
@@ -119,13 +122,31 @@ declare function validCliVersion(value: unknown): value is string;
  */
 declare function readCliVersion(bundle: string): Promise<string | undefined>;
 /**
- * Build the chat User-Agent for one region.
+ * Build the chat User-Agent.
+ *
+ * **Both regions carry `WorkBuddy` twice.** That is not an oversight and not a
+ * CN-only rule: read out of the shipped apps, the gateway proxy that composes
+ * `/v2/chat/completions` headers hard-codes the pair in *both* bundles —
+ * `main/daemon-bootstrap.js` in `WorkBuddy.app` and the same function in
+ * `WorkBuddy AI.app` both join `[`WorkBuddy/${v}`, `WorkBuddy/${v}`, CLI/…]`.
+ * The international product name lives in `product.json` (`WorkBuddy AI`), in
+ * the window title, and in the *catalog* UA (`WorkBuddyAI/<v>`), but not here.
+ *
+ * This used to read `WorkBuddy AI` for the global region, on the reasoning that
+ * the token "names the app that owns the region's requests". Live A/B on
+ * 2026-10-20 (10 alternating samples per form, `deepseek-v4.1-flash`) showed no
+ * acceptance difference between the two spellings — 6/10 vs 7/10, both refusals
+ * `429/14003 "Model busy"` — so the space form bought nothing and claimed a
+ * shape the official client does not send.
+ *
+ * Region still selects the *version* (each app has its own), it just no longer
+ * selects the product token.
  *
  * Throws on an invalid version rather than interpolating one into a header;
  * `resolveChatIdentity` never produces such an identity, so the throw is a
  * last gate against future call-site mistakes, not an expected path.
  */
-declare function chatUserAgent(identity: ChatIdentity, region: WorkBuddyRegion): string;
+declare function chatUserAgent(identity: ChatIdentity): string;
 /** Constructor dependencies; every reader is injectable so tests never touch a real App or home. */
 interface ResolveChatIdentityOptions {
   /** Installed CN desktop-bundle reader; defaults to the macOS probe. */
@@ -465,9 +486,26 @@ declare class WorkBuddyUpstreamClient {
   private readonly resolveAppVersion;
   /** Chat-identity resolver; see {@link WorkBuddyUpstreamClientOptions.resolveChatIdentity}. */
   private readonly resolveChatIdentity;
+  /**
+   * Per-account conversation channels.
+   *
+   * Kept on the client rather than passed in per call: the whole point is that
+   * consecutive requests of one turn share an id, and a per-call value could
+   * only be right by accident. One client serves one variant, so the channel
+   * table never mixes CN and international conversations.
+   */
+  private readonly channels;
   /** Provenance of the most recent successful catalog fetch, for the card. */
   lastCatalog: WorkBuddyCatalogFetch | undefined;
   constructor(options?: WorkBuddyUpstreamClientOptions);
+  /**
+   * The channel this request presents, claimed for the credential's account.
+   *
+   * Keyed by account identity because the gateway's conversation belongs to the
+   * account, not to this process: two accounts sharing one conversation id
+   * would be a claim the upstream can see through.
+   */
+  private channelFor;
   /** POST the chat endpoint; a successful answer is the raw SSE response. */
   chatStream(credential: WorkBuddyCredential, bodyJson: string, signal?: AbortSignal): Promise<WorkBuddyChatResult>;
   /**

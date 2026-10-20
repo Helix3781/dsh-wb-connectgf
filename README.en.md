@@ -43,6 +43,8 @@ Compared with upstream **0.7.8** (2026-10-17). Features both trees share are not
 
 Both trees have: CN/AI groups, image input, reasoning-effort detection, per-account model visibility, CN enterprise credit, picker rate/promo badges, Windows Electron discovery, per-region effort-rejection codes.
 
+**Request identity**: chat sends `WorkBuddy/<v> WorkBuddy/<v> CLI/<v>` as the UA (**`WorkBuddy` twice in both regions, never `AI`** — both shipped apps' gateway proxies compose it that way), the `X-IDE-*` attribution family, `X-Agent-Intent: craft` / `X-Agent-Purpose: conversation` / `X-Agent-Type: main` / `x-codebuddy-request: 1` / `X-Private-Data: true`, and `traceparent` + B3 + `X-Trace-ID` sharing one trace id. The conversation headers follow the official three-tier lifetime: `X-Conversation-ID` stable per conversation, `X-Conversation-Request-ID` stable per turn, `X-Conversation-Message-ID` fresh per request — a new conversation after 30 idle minutes, a new turn after 10. Chat sends no `Origin`/`Referer` (neither does the native client); the console endpoints still do. The two regions' chat headers are **identical**; only the URL, `X-Domain`, and the version are region-scoped, and the only body differences are the international system-message prepend and the removal of `reasoning_effort: off`.
+
 ## Screenshots
 
 WorkBuddy models in chat (rate and reasoning level in the composer, usage and credit on the status bar):

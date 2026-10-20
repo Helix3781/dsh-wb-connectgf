@@ -2,8 +2,26 @@
 
 版本号即 git tag，遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [0.13.17] — 2026-10-20
+## [0.13.18] — 2026-10-20
 
+### 请求身份按官方桌面端逐项补齐（只为少被限流，不改行为）
+
+起因是一条排查：插件侧频繁 `429 soft_rate`，同一时刻官方客户端却能正常发言。查下来真正的报错是本地合成的（池子被 bench 时 `noAccountResult` 直接回 429，一次上游请求都没发），但也确实存在「插件的请求在网关眼里不像官方客户端」这一层。本版修的就是这一层。
+
+对齐依据不是猜测，是从装着的 `WorkBuddy.app` 包里读出来的：CLI 的 `buildConversationHeaders` / 请求头组装，以及桌面端网关代理 `applyGatewayHeaders`（文件 `main/daemon-bootstrap.js`）。
+
+- **会话头改成三层生命周期**（新增 `src/chat-channel.ts`）。官方注释写得很直白：「一次会话内必须稳定，现生成会把同一次桌面操作的几十次调用在网关侧拆成几十个会话」。原来三个 UUID 每请求全新，一轮 DSH 对话（agent 循环 + 工具调用 + 标题生成）在网关侧就是十几次「新会话」。现在：`X-Conversation-ID` 一次会话稳定（空闲 30 分钟换）、`X-Conversation-Request-ID` 一轮稳定（10 分钟换）、`X-Conversation-Message-ID` 每请求新；并按账号隔离，两个账号不共用会话。同时补上官方也发的 `X-Request-ID`（= message id）与 `X-Root-Request-ID`。
+- **补上归属族**：`X-Agent-Intent: craft`、`X-Agent-Purpose: conversation`、`X-Agent-Type: main`、`x-codebuddy-request: 1`、`X-Private-Data: true`。官方每次 chat 都带，缺一项就不再像那个客户端。
+- **补上 trace 三件套**：`traceparent`（W3C）、`b3` + `X-B3-*`（B3）、`X-Trace-ID` 共享同一个 traceId —— 官方代理的注释说明三套各生成一个等于没有 trace。
+- **chat 不再带 `Origin`/`Referer`**：原来是 `Origin: https://www.codebuddy.cn` 去打 `copilot.tencent.com`，跨源浏览器语义，原生客户端不发。refresh / catalog / billing 保留这两个头，因为它们确实是控制台的请求。chat 的 `X-Tenant-Id` 在有企业身份时一并补上（与 `billingHeaders` 同一拼写）。
+- **fallback 版本号跟着真实安装走**：CN 5.5.6 → 5.6.2，国际 5.5.2 → 5.7.6（读的是本机装的两个 App）。只在 bundle 读不到时才用，但那时报一个早已停发的版本号是唯一会错在 wire 上的东西。
+- **国际服 chat UA 的产品 token 改回 `WorkBuddy`**。原来写的是 `WorkBuddy/<v> WorkBuddy AI/<v> CLI/<v>`，理由是「token 指该区域的应用」。从包里读出来不是这样：`WorkBuddy.app` 与 `WorkBuddy AI.app` 的网关代理**都**硬编码 `[`WorkBuddy/${v}`, `WorkBuddy/${v}`, CLI/…]`；`WorkBuddy AI` 只出现在 `product.json`、窗口标题和**目录**请求的 `WorkBuddyAI/<v>` 里，不在 chat 上。2026-10-20 实测（`deepseek-v4.1-flash`，两写法各 10 次交替）：6/10 vs 7/10 接受率，拒绝全是 `429/14003「模型繁忙」`——**没有任何可测差异**。所以空格写法既没换来配额，又声明了一个官方不发的形状，改回原样。区域现在只决定版本号、`X-Domain` 和 URL，不再决定产品 token。
+  - 注意 `chatUserAgent` 的签名因此去掉 `region` 参数：留着一个不再影响结果的参数，下一个改它的人会以为它有用。
+  - 顺手记下：`14003` 是官方错误码表里的 `RateLimitError`（容量），不是 `14001 UsageLimitExceeded`（额度）。所以国际服那些 429 是**服务端满负荷**，改请求头改不掉。
+
+测试侧：新增 `tests/chat-channel.spec.ts`（7 例，覆盖会话/轮/请求三层生命周期、账号隔离、边界时刻、clear、表容量上限）；`tests/chat-identity-wire.spec.ts` 新增归属族与通道断言、refresh 反向断言（归属族是 chat-only），并把版本断言改成对着常量断言而不是字面量。
+
+## [0.13.17] — 2026-10-20
 ### 支持的 DSH 版本：**只有 `0.2.1-rc.x`**
 
 本版 `peerDependencies` 收窄为 `^0.2.1-rc.1` + `@earendil-works/pi-ai ^1.1.0`。**安装在 `0.1.7-alpha.x` 或 `0.2.0-rc.x` 上会被包管理器拒绝**，这是有意的：

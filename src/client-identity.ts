@@ -2,13 +2,12 @@
  * The desktop-client identity chat requests present as.
  *
  * Chat and its probe sibling carry the User-Agent shape the official desktop
- * client composes — `WorkBuddy/<v> <product>/<v> CLI/<cli>` — where the
- * product token names the app that owns the region's requests: `WorkBuddy`
- * for CN, `WorkBuddy AI` for international. Versions come from the installed
- * App when it can be read, degrade to a per-region saved value, and finally
- * to a compiled-in constant. A CLI version that does not resolve drops the
- * `CLI/…` token instead of inventing one (the official client's own rule for
- * a missing extension).
+ * client composes — `WorkBuddy/<v> WorkBuddy/<v> CLI/<cli>`. **Both regions
+ * send the same product token**; only the version differs, because each app
+ * ships its own. Versions come from the installed App when it can be read,
+ * degrade to a per-region saved value, and finally to a compiled-in constant.
+ * A CLI version that does not resolve drops the `CLI/…` token instead of
+ * inventing one (the official client's own rule for a missing extension).
  *
  * The same resolved version also fills the `X-IDE-Version` attribution
  * header chat and probe send, so the UA and the attribution family can never
@@ -39,11 +38,14 @@ import type { WorkBuddyRegion } from './upstream.ts'
 /**
  * Compiled-in CN fallback for the `WorkBuddy/<v>` tokens.
  *
- * Observed on the CN desktop app installed here (research §3.1, verified
- * 2026-09-11); like the international fallback it is a shape requirement,
- * not a currency claim — the gateway has not been observed to branch on it.
+ * Re-measured from the installed `WorkBuddy.app` on 2026-10-20 (5.6.2). Like
+ * the international fallback it is a shape requirement, not a currency claim —
+ * the gateway has not been observed to branch on the number. It only applies
+ * when the bundle cannot be read at all, so it should still name a version a
+ * real client has shipped: an old number is the one thing a fallback can get
+ * wrong on the wire.
  */
-export const FALLBACK_CN_APP_VERSION = '5.5.6'
+export const FALLBACK_CN_APP_VERSION = '5.6.2'
 
 /**
  * Basename of the CN saved-version cache under `$DSH_HOME`.
@@ -116,21 +118,38 @@ export async function readCliVersion(bundle: string): Promise<string | undefined
 }
 
 /**
- * Build the chat User-Agent for one region.
+ * Build the chat User-Agent.
+ *
+ * **Both regions carry `WorkBuddy` twice.** That is not an oversight and not a
+ * CN-only rule: read out of the shipped apps, the gateway proxy that composes
+ * `/v2/chat/completions` headers hard-codes the pair in *both* bundles —
+ * `main/daemon-bootstrap.js` in `WorkBuddy.app` and the same function in
+ * `WorkBuddy AI.app` both join `[`WorkBuddy/${v}`, `WorkBuddy/${v}`, CLI/…]`.
+ * The international product name lives in `product.json` (`WorkBuddy AI`), in
+ * the window title, and in the *catalog* UA (`WorkBuddyAI/<v>`), but not here.
+ *
+ * This used to read `WorkBuddy AI` for the global region, on the reasoning that
+ * the token "names the app that owns the region's requests". Live A/B on
+ * 2026-10-20 (10 alternating samples per form, `deepseek-v4.1-flash`) showed no
+ * acceptance difference between the two spellings — 6/10 vs 7/10, both refusals
+ * `429/14003 "Model busy"` — so the space form bought nothing and claimed a
+ * shape the official client does not send.
+ *
+ * Region still selects the *version* (each app has its own), it just no longer
+ * selects the product token.
  *
  * Throws on an invalid version rather than interpolating one into a header;
  * `resolveChatIdentity` never produces such an identity, so the throw is a
  * last gate against future call-site mistakes, not an expected path.
  */
-export function chatUserAgent(identity: ChatIdentity, region: WorkBuddyRegion): string {
+export function chatUserAgent(identity: ChatIdentity): string {
   if (!validAppVersion(identity.clientVersion)) {
     throw new Error(`invalid client version for chat User-Agent: ${JSON.stringify(identity.clientVersion)}`)
   }
   if (identity.cliVersion !== undefined && !validCliVersion(identity.cliVersion)) {
     throw new Error(`invalid CLI version for chat User-Agent: ${JSON.stringify(identity.cliVersion)}`)
   }
-  const product = region === 'global' ? 'WorkBuddy AI' : 'WorkBuddy'
-  const parts = [`WorkBuddy/${identity.clientVersion}`, `${product}/${identity.clientVersion}`]
+  const parts = [`WorkBuddy/${identity.clientVersion}`, `WorkBuddy/${identity.clientVersion}`]
   if (identity.cliVersion !== undefined) parts.push(`CLI/${identity.cliVersion}`)
   return parts.join(' ')
 }

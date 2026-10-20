@@ -43,6 +43,8 @@
 
 两边都有：国内/国际分组、图片输入、推理档位检测、模型显隐、国内企业额度、选择器里的倍率与促销徽章、Windows Electron 发现、按区域识别 effort 拒绝码。
 
+**请求身份**：chat 送出的是 `WorkBuddy/<v> WorkBuddy/<v> CLI/<v>` 的 UA（**两服都是 `WorkBuddy`，不带 `AI`**——两个官方包的网关代理都这么拼）、`X-IDE-*` 归属头、`X-Agent-Intent: craft` / `X-Agent-Purpose: conversation` / `X-Agent-Type: main` / `x-codebuddy-request: 1` / `X-Private-Data: true`，以及共享同一 traceId 的 `traceparent` + B3 + `X-Trace-ID`。会话头按官方规则分三层生命周期：`X-Conversation-ID` 一次会话稳定、`X-Conversation-Request-ID` 一轮稳定、`X-Conversation-Message-ID` 每请求新；空闲 30 分钟换会话、10 分钟换轮。chat 不带 `Origin`/`Referer`（官方原生客户端也不带），控制台接口仍然带。两服的 chat 头**完全相同**，只有 URL、`X-Domain` 和版本号按区域取；请求体差异也只有国际服补 system 消息、去掉 `reasoning_effort: off` 两条。
+
 ## 展示
 
 对话里直接用 WorkBuddy 模型（输入框显示倍率与推理档位，底栏有用量和额度）：

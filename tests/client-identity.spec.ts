@@ -39,24 +39,31 @@ async function bundleWithCliPackage(pkg: unknown): Promise<string> {
 }
 
 describe('chatUserAgent', () => {
-  it('composes the CN desktop form with both product tokens and the CLI segment', () => {
-    expect(chatUserAgent({ clientVersion: '5.5.6', cliVersion: '2.137.1' }, 'cn'))
+  it('composes the desktop form with both product tokens and the CLI segment', () => {
+    expect(chatUserAgent({ clientVersion: '5.5.6', cliVersion: '2.137.1' }))
       .toBe('WorkBuddy/5.5.6 WorkBuddy/5.5.6 CLI/2.137.1')
   })
 
-  it('names the international product in the second token only', () => {
-    expect(chatUserAgent({ clientVersion: '5.5.2', cliVersion: '5.5.2' }, 'global'))
-      .toBe('WorkBuddy/5.5.2 WorkBuddy AI/5.5.2 CLI/5.5.2')
+  /**
+   * Both shipped apps' gateway proxies hard-code `WorkBuddy` twice, so the
+   * international client sends the same product token as the CN one. The token
+   * is therefore NOT region-scoped, and this pin is what stops the older
+   * "WorkBuddy AI names the region's app" reasoning from coming back.
+   */
+  it('does not spell the international product name into the UA', () => {
+    expect(chatUserAgent({ clientVersion: '5.7.6', cliVersion: '2.147.0' }))
+      .toBe('WorkBuddy/5.7.6 WorkBuddy/5.7.6 CLI/2.147.0')
+    expect(chatUserAgent({ clientVersion: '5.7.6', cliVersion: '2.147.0' })).not.toContain('WorkBuddy AI/')
   })
 
   it('omits the CLI segment when no CLI version resolved', () => {
-    expect(chatUserAgent({ clientVersion: '5.5.6' }, 'cn')).toBe('WorkBuddy/5.5.6 WorkBuddy/5.5.6')
+    expect(chatUserAgent({ clientVersion: '5.5.6' })).toBe('WorkBuddy/5.5.6 WorkBuddy/5.5.6')
   })
 
   it('rejects values that could break a header rather than interpolating them', () => {
-    expect(() => chatUserAgent({ clientVersion: '5.5.6 x' }, 'cn')).toThrow()
-    expect(() => chatUserAgent({ clientVersion: '5.5.6\nX: 1' }, 'cn')).toThrow()
-    expect(() => chatUserAgent({ clientVersion: '5.5.6', cliVersion: '2.137.1 rm' }, 'cn')).toThrow()
+    expect(() => chatUserAgent({ clientVersion: '5.5.6 x' })).toThrow()
+    expect(() => chatUserAgent({ clientVersion: '5.5.6\nX: 1' })).toThrow()
+    expect(() => chatUserAgent({ clientVersion: '5.5.6', cliVersion: '2.137.1 rm' })).toThrow()
   })
 })
 

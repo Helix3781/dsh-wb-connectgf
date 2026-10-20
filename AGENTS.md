@@ -75,6 +75,8 @@
 ## 硬性不变量（改代码别破）
 
 - **两个变体永远对称**：CN `workbuddy` 与国际 `workbuddy-ai` 的 config / route / 卡片 / 文案必须成对；只给一版加东西时，先问另一版怎么办。
+- **chat 的请求身份是逐项对齐出来的，别凭手感改**：会话头三层生命周期（`X-Conversation-ID` 一次会话 / `X-Conversation-Request-ID` 一轮 / `X-Conversation-Message-ID` 每请求）在 `src/chat-channel.ts`，归属族与 trace 三件套在 `src/upstream.ts` 的 `attributionHeaders`，两者都抄自装着的 `WorkBuddy.app` 包（`cli/dist/codebuddy-headless.js` 与 `main/daemon-bootstrap.js` 的 `applyGatewayHeaders`）。**chat 不发 `Origin`/`Referer`**（原生客户端不发；refresh/catalog/billing 仍发）。改这些之前先去包里读一遍，别按「看起来更全」删或加。
+- **两服的 chat 头是同一套，不要为国际服另造一份**：URL、`X-Domain`、版本号按区域取；请求体只多两条国际规则（补 system、去 `reasoning_effort: off`）。**UA 的产品 token 两服都是 `WorkBuddy`**（两个官方包的网关代理都硬编码 `[WorkBuddy/v, WorkBuddy/v, CLI/…]`），`WorkBuddy AI` 只在 `product.json`／窗口标题／**目录**请求的 `WorkBuddyAI/<v>` 里。2026-10-20 实测两写法接受率无可测差异（6/10 vs 7/10，拒绝全是 `429/14003`），所以别再把它改回空格写法。
 - **plugin-wide 偏好只有一份**：设置写回走 `volatile` 字段（`sidebarCreditStyle`、`sidebarCreditVisible`…），两个变体的 route 都要接受写、两份文档都带回同一个值 —— 侧栏只有一张。
 - **"说不出来的偏好 = 保持原样"**：文档里没有该字段时，改变外观的偏好回默认；**会删掉一个表面**的（如 `sidebarCreditVisible`）必须读作"开"，否则一次升级就清空别人的侧栏。
 - **样式是类，不是内联对象**：规则全在 `src/client/ui-styles.ts`，前缀 `wbp-`，颜色只取 `--dsw-alias-*`。设置页是一列行（720px、发丝线分隔），不是卡片。

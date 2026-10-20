@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { WorkBuddyCredential } from '../src/auth.ts'
 import { WorkBuddyUpstreamClient } from '../src/upstream.ts'
-import type { ChatIdentity } from '../src/client-identity.ts'
+import { FALLBACK_CN_APP_VERSION, type ChatIdentity } from '../src/client-identity.ts'
+import { FALLBACK_APP_VERSION } from '../src/app-version.ts'
 
 /**
  * Outbound wire pin for the phase-1 chat identity (plan §3, 阶段一离线检查):
@@ -25,7 +26,12 @@ function client(): WorkBuddyUpstreamClient {
 }
 
 function fakeResponse(body: string, ok = true, status = 200): Response {
-  return { ok, status, text: () => Promise.resolve(body) } as unknown as Response
+  return {
+    ok,
+    status,
+    headers: { get: () => null },
+    text: () => Promise.resolve(body),
+  } as unknown as Response
 }
 
 afterEach(() => {
@@ -57,10 +63,13 @@ describe('chatStream identity', () => {
     expect(headers['X-IDE-Name']).toBe('WorkBuddy')
     expect(headers['X-IDE-Version']).toBe(IDENTITY.clientVersion)
     expect(headers['X-Product']).toBe('SaaS')
-    // The shared family stays exactly as before the identity change.
     expect(headers['X-Requested-With']).toBe('XMLHttpRequest')
-    expect(headers['Origin']).toBe('https://www.codebuddy.cn')
-    expect(headers['Referer']).toBe('https://www.codebuddy.cn/')
+    // Chat must not claim to be a browser page posting cross-origin: the
+    // official desktop client sends no Origin/Referer on this endpoint at all.
+    // Those two stay on refresh/catalog/billing, where the console really is
+    // the caller — see the regression pins below.
+    expect(headers['Origin']).toBeUndefined()
+    expect(headers['Referer']).toBeUndefined()
     expect(headers['X-User-Id']).toBe('uid-1')
     expect(headers['X-Product']).toBe('SaaS')
     expect(headers['Authorization']).toBe('Bearer at')
@@ -68,22 +77,84 @@ describe('chatStream identity', () => {
     expect(init.body).toBe(JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }))
   })
 
-  it('names the international product in the UA and still prepends the first system message', async () => {
+  it('sends the same product token internationally, and still prepends the first system message', async () => {
     const wire = captureFetch('{}')
     const result = await client().chatStream(GLOBAL, JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }))
     expect(result.ok).toBe(true)
     const [url, init] = wire.last()
     expect(url).toBe('https://www.workbuddy.ai/v2/chat/completions')
     const headers = init.headers as Record<string, string>
-    expect(headers['User-Agent']).toBe('WorkBuddy/5.5.6 WorkBuddy AI/5.5.6 CLI/2.137.1')
-    // The attribution family names the product family, not the region; only the
-    // UA's product token (and the system message) differ between the two.
+    // Both shipped apps compose `WorkBuddy/<v> WorkBuddy/<v>` on the gateway
+    // path; the international product name is not part of it. Only the region's
+    // version, X-Domain, and the body rules differ.
+    expect(headers['User-Agent']).toBe('WorkBuddy/5.5.6 WorkBuddy/5.5.6 CLI/2.137.1')
     expect(headers['X-IDE-Type']).toBe('WorkBuddy')
     expect(headers['X-IDE-Name']).toBe('WorkBuddy')
     expect(headers['X-IDE-Version']).toBe(IDENTITY.clientVersion)
     const body = JSON.parse(init.body as string) as { messages: { role: string }[] }
     expect(body.messages[0]?.role).toBe('system')
     expect(body.messages[1]?.role).toBe('user')
+  })
+})
+
+describe('native attribution and channel headers', () => {
+  it('sends the agent/trace attribution family the official client sends', async () => {
+    const wire = captureFetch('{}')
+    await client().chatStream(CN, JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }))
+    const headers = wire.last()[1].headers as Record<string, string>
+    expect(headers['X-Agent-Intent']).toBe('craft')
+    expect(headers['X-Agent-Purpose']).toBe('conversation')
+    expect(headers['X-Agent-Type']).toBe('main')
+    expect(headers['x-codebuddy-request']).toBe('1')
+    expect(headers['X-Private-Data']).toBe('true')
+    // The three trace dialects must share one id, or the gateway cannot join
+    // them; that is the official proxy's own stated rule.
+    expect(headers['traceparent']).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/u)
+    expect(headers['X-B3-TraceId']).toBe(headers['X-Trace-ID'])
+    expect(headers['traceparent']?.split('-')[1]).toBe(headers['X-Trace-ID'])
+    expect(headers['b3']?.startsWith(headers['X-Trace-ID'] as string)).toBe(true)
+  })
+
+  it('keeps one conversation across a turn and mints a message id per request', async () => {
+    const upstream = client()
+    const body = JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] })
+    const wire = captureFetch('{}')
+    await upstream.chatStream(CN, body)
+    const first = wire.last()[1].headers as Record<string, string>
+    await upstream.chatStream(CN, body)
+    const second = wire.last()[1].headers as Record<string, string>
+
+    // Same conversation, same turn: only the message id moves.
+    expect(second['X-Conversation-ID']).toBe(first['X-Conversation-ID'])
+    expect(second['X-Conversation-Request-ID']).toBe(first['X-Conversation-Request-ID'])
+    expect(second['X-Conversation-Message-ID']).not.toBe(first['X-Conversation-Message-ID'])
+    // The official client reuses the message id as the request id, inside its
+    // conversation's root request id.
+    expect(first['X-Request-ID']).toBe(first['X-Conversation-Message-ID'])
+    expect(second['X-Root-Request-ID']).toBe(first['X-Root-Request-ID'])
+    expect(first['X-Root-Request-ID']).toBe(first['X-Conversation-Message-ID'])
+  })
+
+  it('never shares a conversation between two accounts', async () => {
+    const upstream = client()
+    const body = JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] })
+    const wire = captureFetch('{}')
+    await upstream.chatStream(CN, body)
+    const a = wire.last()[1].headers as Record<string, string>
+    await upstream.chatStream({ ...CN, uid: 'uid-2' }, body)
+    const b = wire.last()[1].headers as Record<string, string>
+    expect(b['X-Conversation-ID']).not.toBe(a['X-Conversation-ID'])
+  })
+
+  it('gives the probe its own message id but the account conversation', async () => {
+    const upstream = client()
+    const wire = captureFetch('{"code":11150,"msg":"no"}', false, 400)
+    await upstream.chatStream(CN, JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }))
+    const chat = wire.last()[1].headers as Record<string, string>
+    await upstream.probeEffort(CN, 'model-x', 'low', new AbortController().signal)
+    const probe = wire.last()[1].headers as Record<string, string>
+    expect(probe['X-Conversation-ID']).toBe(chat['X-Conversation-ID'])
+    expect(probe['X-Conversation-Message-ID']).not.toBe(chat['X-Conversation-Message-ID'])
   })
 })
 
@@ -108,7 +179,7 @@ describe('probeEffort identity', () => {
     await client().probeEffort(GLOBAL, 'model-x', undefined, new AbortController().signal)
     const [, init] = wire.last()
     const headers = init.headers as Record<string, string>
-    expect(headers['User-Agent']).toBe('WorkBuddy/5.5.6 WorkBuddy AI/5.5.6 CLI/2.137.1')
+    expect(headers['User-Agent']).toBe('WorkBuddy/5.5.6 WorkBuddy/5.5.6 CLI/2.137.1')
     expect(headers['X-IDE-Version']).toBe(IDENTITY.clientVersion)
     const body = JSON.parse(init.body as string) as { messages: { role: string }[]; max_tokens: number }
     expect(body.messages[0]?.role).toBe('system')
@@ -126,19 +197,23 @@ describe('probeEffort identity', () => {
     const chat = await throwing.chatStream(CN, JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }))
     expect(chat.ok).toBe(true)
     const chatHeaders = chatWire.last()[1].headers as Record<string, string>
-    expect(chatHeaders['User-Agent']).toBe('WorkBuddy/5.5.6 WorkBuddy/5.5.6')
+    // Asserted against the constant, not a literal: the fallback is a
+    // statement about which client version this build should claim when the
+    // bundle is unreadable, and re-pinning the number here made every bump a
+    // two-file edit for no added guarantee.
+    expect(chatHeaders['User-Agent']).toBe(`WorkBuddy/${FALLBACK_CN_APP_VERSION} WorkBuddy/${FALLBACK_CN_APP_VERSION}`)
     // The fallback identity carries a version too, so the attribution header
     // names the same client the UA does instead of going missing.
     expect(chatHeaders['X-IDE-Type']).toBe('WorkBuddy')
     expect(chatHeaders['X-IDE-Name']).toBe('WorkBuddy')
-    expect(chatHeaders['X-IDE-Version']).toBe('5.5.6')
+    expect(chatHeaders['X-IDE-Version']).toBe(FALLBACK_CN_APP_VERSION)
 
     const probeWire = captureFetch('{"code":11150,"msg":"no"}', false, 400)
     const probe = await throwing.probeEffort(GLOBAL, 'model-x', 'low', new AbortController().signal)
     expect(probe.status).toBe(400)
     const probeHeaders = probeWire.last()[1].headers as Record<string, string>
-    expect(probeHeaders['User-Agent']).toBe('WorkBuddy/5.5.2 WorkBuddy AI/5.5.2')
-    expect(probeHeaders['X-IDE-Version']).toBe('5.5.2')
+    expect(probeHeaders['User-Agent']).toBe(`WorkBuddy/${FALLBACK_APP_VERSION} WorkBuddy/${FALLBACK_APP_VERSION}`)
+    expect(probeHeaders['X-IDE-Version']).toBe(FALLBACK_APP_VERSION)
   })
 })
 
@@ -156,6 +231,11 @@ describe('unchanged paths (regression pin)', () => {
     expect(headers['X-Auth-Refresh-Source']).toBe('workbuddy')
     expect(headers['X-Refresh-Token']).toBe('rt')
     expect(headers['Origin']).toBe('https://www.codebuddy.cn')
+    // The native attribution family is chat-only: refresh is the console's own
+    // request and must not claim to be a desktop conversation.
+    expect(headers['X-Agent-Intent']).toBeUndefined()
+    expect(headers['x-codebuddy-request']).toBeUndefined()
+    expect(headers['X-Private-Data']).toBeUndefined()
   })
 
   it('CN catalog keeps the CLI-form UA', async () => {

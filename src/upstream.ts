@@ -7,11 +7,12 @@
  * @module dsh-workbuddy-connect/upstream
  */
 
-import { randomUUID } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { describeFetchFailure } from './fetch-failure.ts'
 import { isJsonObject, parseJsonObject } from './json-value.ts'
 import { appUserAgent, resolveAppVersion, type AppVersionInfo } from './app-version.ts'
 import { chatUserAgent, fallbackChatIdentity, resolveChatIdentity, type ChatIdentity } from './client-identity.ts'
+import { WorkBuddyChatChannels, type ChatChannel } from './chat-channel.ts'
 import type { WorkBuddyCredential } from './auth.ts'
 import type { ProbeAttempt } from './probe.ts'
 import { PROBE_MAX_TOKENS, PROBE_PROMPT } from './probe.ts'
@@ -474,49 +475,127 @@ function commonHeaders(credential: WorkBuddyCredential): Record<string, string> 
 }
 
 /**
- * The conversation-channel trio the chat endpoints require.
+ * The conversation-channel headers the chat endpoints require.
  *
  * Since 2026-10-16 `www.workbuddy.ai` answers any `/v2/chat/completions`
  * request that omits all three `X-Conversation-*` headers with `400` /
  * `code 11128` / `"conversation id missing"` (issue #139). The official
- * desktop client sends the trio on chat and speech alike.
+ * desktop client sends the trio on chat and speech alike, and its gateway
+ * proxy documents the lifetimes the trio is supposed to have — a session-stable
+ * conversation id, a request id per turn, a message id per call. The plugin
+ * used to mint three fresh UUIDs per request; {@link module:chat-channel}
+ * explains why that was the one measurably wrong part of the disguise and how
+ * the lifetimes are tracked instead.
  *
- * A fresh UUID per request is what the wire measurement supports: the upstream
- * keeps no history keyed by the id (two calls sharing one id, the second
- * carrying only `system` + `user`, still answered "I don't know"), so the trio
- * marks the channel rather than carrying conversation state. Fresh ids also
- * keep concurrent sub-agents off one shared conversation. The CN gateway was
- * measured accepting the same trio, so both regions carry it and the two
- * paths cannot drift.
+ * The trio is now claimed from the client's per-account channel table, so the
+ * whole DSH turn — agent loop, tool calls, every retry — stays inside one
+ * gateway conversation instead of opening a new one per HTTP request.
  */
-function conversationHeaders(): Record<string, string> {
+function channelHeaders(channel: ChatChannel): Record<string, string> {
   return {
-    'X-Conversation-ID': randomUUID(),
-    'X-Conversation-Request-ID': randomUUID(),
-    'X-Conversation-Message-ID': randomUUID(),
+    'X-Conversation-ID': channel.conversationId,
+    'X-Conversation-Request-ID': channel.requestId,
+    'X-Conversation-Message-ID': channel.messageId,
+    // The official client sends the message id as the request id too, and the
+    // root request id on every call of the conversation it opened.
+    'X-Request-ID': channel.messageId,
+    'X-Root-Request-ID': channel.rootRequestId,
   }
 }
 
 /**
- * Chat request headers, including the X-No-* conventions the official CLI uses.
+ * The attribution headers every official model call carries.
+ *
+ * Read out of the shipped `WorkBuddy.app` bundle, not guessed: the CLI composes
+ * this family in `buildConversationHeaders` / its request path, and the desktop
+ * gateway proxy repeats it in `applyGatewayHeaders`
+ * (`X-Agent-Intent: craft`, `X-Agent-Purpose: conversation`,
+ * `x-codebuddy-request: 1`, `X-Private-Data: true`, plus a trace trio sharing
+ * one trace id).
+ *
+ * These are *claims the official client makes about the request*, so a client
+ * that omits them is not merely less polite — it is recognisably not that
+ * client. They are chat-only: refresh, catalog, and billing keep their own
+ * long-standing shapes, where the same family would be a claim the endpoint
+ * never expected.
+ *
+ * `X-Agent-Type` is `main`: the upstream counts a `subagent` against a
+ * different bucket, and a top-level DSH conversation is a main agent even when
+ * the harness itself is orchestrating.
+ */
+function attributionHeaders(): Record<string, string> {
+  return {
+    'X-Agent-Intent': 'craft',
+    'X-Agent-Purpose': 'conversation',
+    'X-Agent-Type': 'main',
+    'x-codebuddy-request': '1',
+    // The official default flips this to "false" only when model optimization
+    // is on; the value that marks a first-party call either way is the header's
+    // presence, and "true" is what the shipped default sends.
+    'X-Private-Data': 'true',
+    ...traceHeaders(),
+  }
+}
+
+/**
+ * The three trace dialects the gateway reads, sharing one trace id.
+ *
+ * The official proxy's own comment is the specification: generating three
+ * separate trace ids makes the gateway's three views of one call unjoinable,
+ * which is the same as sending no trace at all. W3C `traceparent`, B3, and the
+ * gateway's `X-Trace-ID` therefore all carry one id.
+ */
+function traceHeaders(): Record<string, string> {
+  const traceId = randomBytes(16).toString('hex')
+  const spanId = randomBytes(8).toString('hex')
+  const parentSpanId = randomBytes(8).toString('hex')
+  return {
+    'traceparent': `00-${traceId}-${spanId}-01`,
+    'b3': `${traceId}-${spanId}-1-${parentSpanId}`,
+    'X-B3-TraceId': traceId,
+    'X-B3-ParentSpanId': parentSpanId,
+    'X-B3-SpanId': spanId,
+    'X-B3-Sampled': '1',
+    'X-Trace-ID': traceId,
+  }
+}
+
+/**
+ * Chat request headers.
+ *
+ * This is the form the official desktop client sends, header for header:
+ *
+ * - the shared family (`Accept`, `Content-Type`) stays;
+ * - `Origin`/`Referer` are **dropped**: they were `https://www.codebuddy.cn`
+ *   on a POST to `copilot.tencent.com`, i.e. a cross-origin browser claim the
+ *   native client never makes. A gateway that buckets by origin sees a page
+ *   session rather than the desktop app. The other endpoints (refresh, catalog,
+ *   billing) keep them, because those really are the console's own requests;
+ * - the account identity, `X-IDE-*` attribution, and `X-Product` ride along as
+ *   before;
+ * - the conversation trio and the agent/trace attribution come from
+ *   {@link channelHeaders} and {@link attributionHeaders}.
  *
  * `userAgent` and `clientVersion` are the two halves of one resolved desktop
  * identity and always arrive together: the UA names the client, and the
- * `X-IDE-*` attribution family declares the app the request claims to be —
- * the form the official desktop client sends, which is why chat may present
- * it. Refresh shares `commonHeaders` but never this family, so the two paths
- * cannot drift into each other.
+ * `X-IDE-*` attribution family declares the app the request claims to be.
  */
-function chatHeaders(credential: WorkBuddyCredential, userAgent: string, clientVersion: string): Record<string, string> {
+function chatHeaders(
+  credential: WorkBuddyCredential,
+  userAgent: string,
+  clientVersion: string,
+  channel: ChatChannel,
+): Record<string, string> {
   const headers: Record<string, string> = {
-    ...commonHeaders(credential),
-    'User-Agent': userAgent,
+    'Accept': 'application/json',
     'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
+    'User-Agent': userAgent,
     // 安全红线：chat 请求绝不携带 refresh token。
     ...credential.uid === '' ? { 'X-No-User-Id': '1' } : { 'X-User-Id': credential.uid },
     ...credential.enterpriseId === undefined || credential.enterpriseId === ''
       ? { 'X-No-Enterprise-Id': '1' }
-      : { 'X-Enterprise-Id': credential.enterpriseId },
+      : { 'X-Enterprise-Id': credential.enterpriseId, 'X-Tenant-Id': credential.enterpriseId },
     ...credential.domain === '' ? { 'X-No-Department-Info': '1' } : { 'X-Domain': credential.domain },
     // IDE attribution, ported from the desktop app's own requests. Type and
     // name stay literal because they name the product family rather than this
@@ -526,10 +605,11 @@ function chatHeaders(credential: WorkBuddyCredential, userAgent: string, clientV
     'X-IDE-Name': 'WorkBuddy',
     'X-IDE-Version': clientVersion,
     'X-Product': 'SaaS',
+    ...attributionHeaders(),
     // The channel trio rides every chat request: omitting it is a 400 on the
     // international gateway and is accepted on CN, so sending it is the one
-    // form both regions agree on. See {@link conversationHeaders}.
-    ...conversationHeaders(),
+    // form both regions agree on. See {@link channelHeaders}.
+    ...channelHeaders(channel),
   }
   return headers
 }
@@ -750,6 +830,15 @@ export class WorkBuddyUpstreamClient {
   private readonly resolveAppVersion: () => Promise<AppVersionInfo>
   /** Chat-identity resolver; see {@link WorkBuddyUpstreamClientOptions.resolveChatIdentity}. */
   private readonly resolveChatIdentity: (region: WorkBuddyRegion) => Promise<ChatIdentity>
+  /**
+   * Per-account conversation channels.
+   *
+   * Kept on the client rather than passed in per call: the whole point is that
+   * consecutive requests of one turn share an id, and a per-call value could
+   * only be right by accident. One client serves one variant, so the channel
+   * table never mixes CN and international conversations.
+   */
+  private readonly channels = new WorkBuddyChatChannels()
 
   /** Provenance of the most recent successful catalog fetch, for the card. */
   lastCatalog: WorkBuddyCatalogFetch | undefined
@@ -757,6 +846,17 @@ export class WorkBuddyUpstreamClient {
   constructor(options: WorkBuddyUpstreamClientOptions = {}) {
     this.resolveAppVersion = options.resolveAppVersion ?? (() => resolveAppVersion())
     this.resolveChatIdentity = options.resolveChatIdentity ?? (region => resolveChatIdentity(region))
+  }
+
+  /**
+   * The channel this request presents, claimed for the credential's account.
+   *
+   * Keyed by account identity because the gateway's conversation belongs to the
+   * account, not to this process: two accounts sharing one conversation id
+   * would be a claim the upstream can see through.
+   */
+  private channelFor(credential: WorkBuddyCredential): ChatChannel {
+    return this.channels.claim(`${credential.uid}:${credential.enterpriseId ?? ''}`)
   }
 
   /** POST the chat endpoint; a successful answer is the raw SSE response. */
@@ -775,16 +875,19 @@ export class WorkBuddyUpstreamClient {
     let userAgent: string
     try {
       identity = await this.resolveChatIdentity(region)
-      userAgent = chatUserAgent(identity, region)
+      userAgent = chatUserAgent(identity)
     } catch {
       identity = fallbackChatIdentity(region)
-      userAgent = chatUserAgent(identity, region)
+      userAgent = chatUserAgent(identity)
     }
     let response: Response
     try {
       response = await fetch(`${chatBase(credential)}/v2/chat/completions`, {
         method: 'POST',
-        headers: { ...chatHeaders(credential, userAgent, identity.clientVersion), 'Authorization': `Bearer ${credential.accessToken}` },
+        headers: {
+          ...chatHeaders(credential, userAgent, identity.clientVersion, this.channelFor(credential)),
+          'Authorization': `Bearer ${credential.accessToken}`,
+        },
         body: region === 'global' ? prepareInternationalChatBody(bodyJson) : bodyJson,
         ...signal === undefined ? {} : { signal },
       })
@@ -1201,10 +1304,10 @@ export class WorkBuddyUpstreamClient {
     let userAgent: string
     try {
       identity = await this.resolveChatIdentity(international ? 'global' : 'cn')
-      userAgent = chatUserAgent(identity, international ? 'global' : 'cn')
+      userAgent = chatUserAgent(identity)
     } catch {
       identity = fallbackChatIdentity(international ? 'global' : 'cn')
-      userAgent = chatUserAgent(identity, international ? 'global' : 'cn')
+      userAgent = chatUserAgent(identity)
     }
     const payload: Record<string, unknown> = {
       model,
@@ -1221,7 +1324,10 @@ export class WorkBuddyUpstreamClient {
     try {
       response = await fetch(`${chatBase(credential)}/v2/chat/completions`, {
         method: 'POST',
-        headers: { ...chatHeaders(credential, userAgent, identity.clientVersion), 'Authorization': `Bearer ${credential.accessToken}` },
+        headers: {
+          ...chatHeaders(credential, userAgent, identity.clientVersion, this.channelFor(credential)),
+          'Authorization': `Bearer ${credential.accessToken}`,
+        },
         body: JSON.stringify(payload),
         signal,
       })

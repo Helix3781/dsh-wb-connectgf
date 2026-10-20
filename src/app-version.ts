@@ -29,8 +29,13 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
  * item 2: `CLI/1.0.0`, `CLI/99.0.0` and the real version all return the same
  * document), so this constant is a shape requirement rather than a currency
  * claim. It is *not* used to infer anything about model capabilities.
+ *
+ * Re-read from the installed `WorkBuddy AI.app` on 2026-10-20 (5.7.6): this
+ * path is only reached when no bundle and no saved value exist, and naming a
+ * client version that stopped shipping months ago is the one wrong answer a
+ * fallback can give on the wire.
  */
-export const FALLBACK_APP_VERSION = '5.5.2'
+export const FALLBACK_APP_VERSION = '5.7.6'
 
 /** Basename of the saved version under `$DSH_HOME`. */
 export const WORKBUDDY_APP_VERSION_FILENAME = '.workbuddy-ai-version.json'
