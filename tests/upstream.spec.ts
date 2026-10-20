@@ -699,6 +699,27 @@ describe('extractDisplayErrorMessage (PR #58)', () => {
     expect(extractDisplayErrorMessage('')).toBeUndefined()
     expect(extractDisplayErrorMessage('{ invalid json')).toBeUndefined()
   })
+
+  it('recovers the message from a body that was cut before its closing brace', () => {
+    // The 4096-byte cap used to cut this answer mid-JSON, which made the parse
+    // fail and surfaced the raw fragment instead of the sentence the gateway
+    // wrote — including the part that says the call can be resent.
+    const full = JSON.stringify({
+      code: 11128,
+      msg: 'Illegal API invocation from an unapproved channel',
+      displayMsg: { zh: '请求被拦截，请重新发送', en: 'Request blocked. Please send it again' },
+      displayTips: { en: 'This call failed channel verification, possibly because it was not sent from an official client.' },
+      type: 'client',
+    })
+    const cut = full.slice(0, 200)
+    expect(() => JSON.parse(cut)).toThrow()
+    expect(extractDisplayErrorMessage(cut)).toBe('请求被拦截，请重新发送')
+  })
+
+  it('never returns half a value when the cut lands inside one', () => {
+    const cut = '{"displayMsg":{"zh":"请求被拦截，请重新发'
+    expect(extractDisplayErrorMessage(cut)).toBeUndefined()
+  })
 })
 
 describe('auth-failure classification beside the status-note policy (PR #58 review)', () => {
@@ -712,6 +733,22 @@ describe('auth-failure classification beside the status-note policy (PR #58 revi
 
   it('still classifies a markerless 403 as a business error', () => {
     expect(classifyUpstreamError(403, JSON.stringify({ code: 11140, msg: 'request illegal' }))).toBe('client')
+  })
+
+  it('separates a channel-verification refusal from every other 400', () => {
+    const channelBody = JSON.stringify({
+      code: 11128,
+      msg: 'Illegal API invocation from an unapproved channel',
+      displayTips: {
+        en: 'This call failed channel verification, possibly because it was not sent from an official client.',
+        zh: '这次调用没通过渠道校验，',
+      },
+    })
+    expect(classifyUpstreamError(400, channelBody)).toBe('channel_check')
+    // The same code for the body-level problems the client already fixes stays
+    // a plain client error: 11128 alone is not the channel verdict.
+    expect(classifyUpstreamError(400, JSON.stringify({ code: 11128, msg: 'first message is not system prompt' }))).toBe('client')
+    expect(classifyUpstreamError(400, JSON.stringify({ code: 11128, msg: 'developer role not allowed' }))).toBe('client')
   })
 
   it('still recognises dead sessions carried by markers on other statuses', () => {

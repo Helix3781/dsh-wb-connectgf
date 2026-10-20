@@ -128,11 +128,36 @@ describe('native attribution and channel headers', () => {
     expect(second['X-Conversation-ID']).toBe(first['X-Conversation-ID'])
     expect(second['X-Conversation-Request-ID']).toBe(first['X-Conversation-Request-ID'])
     expect(second['X-Conversation-Message-ID']).not.toBe(first['X-Conversation-Message-ID'])
-    // The official client reuses the message id as the request id, inside its
-    // conversation's root request id.
+    // The official client reuses the message id as the request id.
     expect(first['X-Request-ID']).toBe(first['X-Conversation-Message-ID'])
-    expect(second['X-Root-Request-ID']).toBe(first['X-Root-Request-ID'])
-    expect(first['X-Root-Request-ID']).toBe(first['X-Conversation-Message-ID'])
+    // A top-level conversation carries no root request id at all: the official
+    // client only sets one for a fork or a subagent, and an unconditional
+    // header was an extra claim rather than an alignment.
+    expect(first['X-Root-Request-ID']).toBeUndefined()
+    expect(second['X-Root-Request-ID']).toBeUndefined()
+    // Every chat call carries the ACP connection id, and it survives a turn.
+    expect(first['acp-connection-id']).toBeDefined()
+    expect(second['acp-connection-id']).toBe(first['acp-connection-id'])
+  })
+
+  it('spells the ids the way the official client does, and omits the pseudo-headers it never sends', async () => {
+    const wire = captureFetch('{}')
+    await client().chatStream(CN, JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }))
+    const headers = wire.last()[1].headers as Record<string, string>
+    // Session id keeps its dashes; the rest are hex-stripped, as upstream does.
+    expect(headers['X-Conversation-ID']).toMatch(/^[0-9a-f-]{36}$/u)
+    expect(headers['X-Conversation-Request-ID']).toMatch(/^[0-9a-f]{32}$/u)
+    expect(headers['X-Conversation-Message-ID']).toMatch(/^[0-9a-f]{32}$/u)
+    expect(headers['X-Request-ID']).toMatch(/^[0-9a-f]{32}$/u)
+    expect(headers['acp-connection-id']).toMatch(/^[0-9a-f-]{36}$/u)
+    // The `X-No-*` family belongs to `/v2/auth/state` alone. On chat it was a
+    // claim the shipped client never makes — and this credential has no
+    // enterprise, so the old code sent it on every single request.
+    expect(headers['X-No-User-Id']).toBeUndefined()
+    expect(headers['X-No-Enterprise-Id']).toBeUndefined()
+    expect(headers['X-No-Department-Info']).toBeUndefined()
+    expect(headers['X-Enterprise-Id']).toBeUndefined()
+    expect(headers['X-Tenant-Id']).toBeUndefined()
   })
 
   it('never shares a conversation between two accounts', async () => {

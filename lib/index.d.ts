@@ -260,7 +260,7 @@ declare function probeModel(options: {
 /** WorkBuddy region selected by the credential's login domain. */
 type WorkBuddyRegion = 'cn' | 'global';
 /** Upstream failure classes the shim maps onto distinct HTTP answers. */
-type UpstreamErrorKind = 'hard_credit' | 'soft_rate' | 'session_dead' | 'not_found' | 'server' | 'client';
+type UpstreamErrorKind = 'hard_credit' | 'soft_rate' | 'session_dead' | 'not_found' | 'server' | 'channel_check' | 'client';
 /** One CLI-usable model as the upstream catalog describes it. */
 interface WorkBuddyUpstreamModel {
   id: string;
@@ -506,6 +506,15 @@ declare class WorkBuddyUpstreamClient {
    * would be a claim the upstream can see through.
    */
   private channelFor;
+  /**
+   * Forget the account's conversation after a refusal that names the call.
+   *
+   * A channel-verification refusal says "this invocation did not pass", and the
+   * upstream's own message asks for a resend. Reusing the same conversation and
+   * ACP connection for that resend would present the identical claim that was
+   * just refused; a fresh conversation is the only lever this side has.
+   */
+  private abandonChannel;
   /** POST the chat endpoint; a successful answer is the raw SSE response. */
   chatStream(credential: WorkBuddyCredential, bodyJson: string, signal?: AbortSignal): Promise<WorkBuddyChatResult>;
   /**

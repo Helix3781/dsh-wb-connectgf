@@ -185,6 +185,8 @@ export function cooldownReasonFor(kind: UpstreamErrorKind): WorkBuddyCooldownRea
   if (kind === 'soft_rate') return 'rate'
   if (kind === 'hard_credit') return 'credit'
   if (kind === 'session_dead') return 'session'
+  // `channel_check` earns nothing: the account is fine, and benching it would
+  // take a working credential out of rotation over a refused call.
   return undefined
 }
 
@@ -192,6 +194,16 @@ export function cooldownReasonFor(kind: UpstreamErrorKind): WorkBuddyCooldownRea
 export function isAccountScoped(kind: UpstreamErrorKind): boolean {
   return kind === 'soft_rate' || kind === 'hard_credit' || kind === 'session_dead'
 }
+
+/**
+ * How many times one message is resent after a channel-verification refusal.
+ *
+ * One: the refusal's own text asks for a resend ("请重新发送"), so a single
+ * retry honours it. A second identical refusal means the call is being judged
+ * on something this side cannot change, and repeating it only multiplies
+ * refusals against the account.
+ */
+const MAX_CHANNEL_RETRIES = 1
 
 /**
  * Whether the caller has given up.
@@ -347,6 +359,17 @@ export class WorkBuddyRotation {
     const attempts: string[] = []
     let lastResult: WorkBuddyChatResult | undefined
     let lastAccount: WorkBuddyAccount | undefined
+    /**
+     * Channel-verification refusals spent so far.
+     *
+     * That class is the one refusal that names the *call* rather than the
+     * account: the upstream's own text asks for a resend, and every account
+     * would be refused the same way. So it earns one in-place retry — with a
+     * fresh conversation, which the client has already arranged by dropping the
+     * refused channel — and then it is final. Retrying per account would multiply
+     * the refusals without changing the outcome.
+     */
+    let channelRetries = 0
 
     for (;;) {
       if (aborted(signal)) {
@@ -360,7 +383,10 @@ export class WorkBuddyRotation {
       attempts.push(account.id)
       lastAccount = account
 
-      const result = await this.client.chatStream(credentialOf(account), body, signal)
+      // Mutable because a channel-verification refusal is answered with one
+      // resend, and whatever that resend says is the verdict everything below
+      // must judge.
+      let result = await this.client.chatStream(credentialOf(account), body, signal)
       if (result.ok) {
         // Success is the only evidence the account is healthy again, so this is
         // where a benching is lifted and the backoff counter resets.
@@ -370,6 +396,26 @@ export class WorkBuddyRotation {
       lastResult = result
 
       if (aborted(signal)) return { result, attempts, account }
+
+      // The gateway refused the call itself — see `CHANNEL_CHECK_MARKERS` and
+      // `channelRetries`. One resend, on the same account, under the fresh
+      // channel the client has already switched to. A second refusal of the
+      // same kind is not transient and is reported as-is.
+      if (result.kind === 'channel_check') {
+        if (channelRetries >= MAX_CHANNEL_RETRIES) return { result, attempts, account }
+        channelRetries += 1
+        const retry = await this.client.chatStream(credentialOf(account), body, signal)
+        if (retry.ok) {
+          this.pool.clearCooldown(account.id)
+          return { result: this.tapUsage(retry, account.id), attempts, account }
+        }
+        lastResult = retry
+        if (aborted(signal)) return { result: retry, attempts, account }
+        // Refused again for the same reason: this is not transient.
+        if (retry.kind === 'channel_check') return { result: retry, attempts, account }
+        // A different verdict on the resend decides from here on.
+        result = retry
+      }
 
       // A 401 is the one failure worth repairing in place: the refresh token is
       // still good far more often than the session is dead.

@@ -132,6 +132,9 @@ const KIND_STATUS: Readonly<Record<UpstreamErrorKind, number>> = {
   session_dead: 401,
   not_found: 502,
   server: 502,
+  // The gateway refused the *call*, not the account: 400 is the honest status,
+  // and the harness treats 400 as a request error rather than an auth one.
+  channel_check: 400,
   client: 400,
 }
 

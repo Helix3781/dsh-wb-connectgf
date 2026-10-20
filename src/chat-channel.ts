@@ -30,10 +30,29 @@
  * the user walks away, and it keeps a conversation from living for days and
  * accumulating a misleadingly long history on the gateway's side.
  *
+ * ## Id spellings are part of the identity
+ *
+ * The official client does not use one UUID shape for all four ids, and a
+ * client that does is recognisable by regex alone. Read out of the shipped
+ * bundle (`cli/dist/codebuddy-lite-wb.mjs`):
+ *
+ * | id | official producer | shape |
+ * |---|---|---|
+ * | `X-Conversation-ID` | `SessionImpl` → `generateUUUID()` (= `crypto.randomUUID`) | 36-char dashed UUID |
+ * | `X-Conversation-Request-ID` | `generateUUUID().replace(/-/g,'')` | 32-char hex |
+ * | `X-Conversation-Message-ID` | `uuidv7().replace(/-/g,'')` | 32-char hex, **time-ordered** |
+ * | `X-Request-ID` | the message id | 32-char hex, **time-ordered** |
+ *
+ * The message id being UUIDv7 is the part a random UUID cannot imitate: the
+ * first 48 bits are the millisecond timestamp, so a day of requests from one
+ * client sorts and clusters the way the official one does. It is also what the
+ * gateway's per-conversation bucketing would use to interleave concurrent
+ * requests, so this is a wire-visible property rather than cosmetics.
+ *
  * @module dsh-workbuddy-connect/chat-channel
  */
 
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 
 /**
  * How long a conversation survives without traffic.
@@ -59,22 +78,62 @@ const MAX_TRACKED_CHANNELS = 64
 
 /** The headers' values for one request. */
 export interface ChatChannel {
-  /** Stable for the life of the conversation. */
+  /** Stable for the life of the conversation; 36-char dashed, as the official session id is. */
   conversationId: string
-  /** Stable for the life of the user turn. */
+  /** Stable for the life of the user turn; 32-char hex. */
   requestId: string
-  /** Stable for the life of the conversation; the first request's id. */
-  rootRequestId: string
-  /** Fresh for this HTTP request. */
+  /** Fresh for this HTTP request; 32-char hex UUIDv7. */
   messageId: string
+  /**
+   * The ACP connection the request claims to belong to.
+   *
+   * The official gateway proxy sets `acp-connection-id` on **every** chat
+   * request from the session ledger, and that value is the id of a live ACP
+   * connection the client opened by handshaking `POST <endpoint>/connect`.
+   * This plugin calls `/v2/chat/completions` directly and never opens one, so
+   * the value here is minted per conversation and is a claim rather than a
+   * server-issued fact. It is still strictly better on the wire than omitting
+   * the header: an absent required header is unambiguous, a stable per
+   * conversation id is what a client that had opened a connection would send.
+   *
+   * Getting a real one means performing the ACP handshake before the first
+   * chat call; that is a transport change, not a header change, and is out of
+   * scope here.
+   */
+  acpConnectionId: string
 }
 
 /** What one key's channel looks like between requests. */
 interface ChannelState {
   conversationId: string
   requestId: string
-  rootRequestId: string
+  acpConnectionId: string
   lastAtMs: number
+}
+
+/** 32-char lowercase hex, no dashes — the official `replace(/-/g,'')` form. */
+function hexId(bytes: number): string {
+  return randomBytes(bytes).toString('hex')
+}
+
+/**
+ * A UUIDv7 as 32 lowercase hex characters, matching the official message id.
+ *
+ * Besides being the version the official client's id generator emits, v7 is
+ * time-ordered: the leading 48 bits are the millisecond clock, so a client
+ * whose message ids sort by arrival time looks like the shipped one, and a
+ * client whose ids are random does not.
+ */
+export function uuidv7Hex(now = Date.now()): string {
+  const bytes = randomBytes(16)
+  // 48-bit big-endian millisecond timestamp.
+  const ts = BigInt(Math.trunc(now))
+  for (let index = 0; index < 6; index += 1) {
+    bytes[index] = Number((ts >> BigInt(8 * (5 - index))) & 0xffn)
+  }
+  bytes[6] = 0x70 | (bytes[6]! & 0x0f) // version 7
+  bytes[8] = 0x80 | (bytes[8]! & 0x3f) // RFC 4122 variant
+  return bytes.toString('hex')
 }
 
 /**
@@ -95,14 +154,18 @@ export class WorkBuddyChatChannels {
    */
   claim(key: string, now = Date.now()): ChatChannel {
     const current = this.channels.get(key)
-    const messageId = randomUUID()
+    // The message id is the one id minted on every call, and it is the one the
+    // official client derives from a time-ordered v7 generator.
+    const messageId = uuidv7Hex(now)
 
     if (current === undefined || now - current.lastAtMs > CONVERSATION_IDLE_MS) {
       // A new conversation: every id is new, and this request becomes its root.
       const fresh: ChannelState = {
+        // The official session id is a plain `crypto.randomUUID()`, dashes and
+        // all — the one id in the family that is *not* hex-stripped.
         conversationId: randomUUID(),
-        requestId: randomUUID(),
-        rootRequestId: messageId,
+        requestId: hexId(16),
+        acpConnectionId: randomUUID(),
         lastAtMs: now,
       }
       this.remember(key, fresh)
@@ -112,10 +175,22 @@ export class WorkBuddyChatChannels {
     // Same conversation. The turn id rotates only after the user has been
     // silent long enough that the next request is a new message, not a
     // continuation of this one.
-    const requestId = now - current.lastAtMs > TURN_IDLE_MS ? randomUUID() : current.requestId
+    const requestId = now - current.lastAtMs > TURN_IDLE_MS ? hexId(16) : current.requestId
     const next: ChannelState = { ...current, requestId, lastAtMs: now }
     this.remember(key, next)
     return { ...next, messageId }
+  }
+
+  /**
+   * Drop one account's conversation so the next {@link claim} opens a new one.
+   *
+   * Used when a request was refused on grounds that name the *call* rather than
+   * the account: the retry then arrives as a genuinely new conversation with a
+   * new ACP connection, which is the only thing this side can change about how
+   * it looks.
+   */
+  reset(key: string): void {
+    this.channels.delete(key)
   }
 
   /** Forget every conversation; used by tests and by a credential change. */

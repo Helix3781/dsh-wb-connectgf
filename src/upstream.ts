@@ -27,6 +27,7 @@ export type UpstreamErrorKind =
   | 'session_dead'
   | 'not_found'
   | 'server'
+  | 'channel_check'
   | 'client'
 
 /** One CLI-usable model as the upstream catalog describes it. */
@@ -243,7 +244,20 @@ function describeShape(document: unknown): string {
 /** Shared CLI-form User-Agent for refresh and the CN catalog; chat and probe present the desktop identity (client-identity.ts). */
 const CLIENT_UA = 'CLI/2.63.2 CodeBuddy/2.63.2'
 const JSON_TIMEOUT_MS = 30_000
-const ERROR_BODY_LIMIT = 4096
+/**
+ * How much of a failed response body is kept.
+ *
+ * Business refusals are not terse: a channel-verification answer carries
+ * `displayMsg` and `displayTips` in three locales plus a `requestId`. At the
+ * old 4 KiB cap a longer answer was cut mid-JSON, which made
+ * {@link extractDisplayErrorMessage} fail to parse it and fall back to a raw
+ * excerpt — so the user got neither the message nor the reason, and the
+ * gateway's own "please resend" was the part that got cut.
+ *
+ * 64 KiB leaves room for anything this endpoint produces while still
+ * bounding a hostile body.
+ */
+const ERROR_BODY_LIMIT = 65_536
 
 /** Insufficient-credit markers, ASCII lowercase plus the original Chinese. */
 const HARD_CREDIT_MARKERS: readonly string[] = [
@@ -251,6 +265,29 @@ const HARD_CREDIT_MARKERS: readonly string[] = [
   'quota exceeded', 'quota exhaust', 'payment required', 'credit not enough',
   'not enough credit',
   '积分不足', '额度不足', '余额不足', '积分用完', '额度用尽', '没有积分',
+]
+
+/**
+ * Markers of a request refused by the gateway's **channel verification**.
+ *
+ * Distinct from every other 400 on this upstream, and worth its own class for
+ * one reason: the upstream's own `displayMsg` says "请重新发送" — resend. It is
+ * a judgement about *this call*, not about the account (rotating accounts would
+ * fail identically) and not about the credential (so 401/402 handling would be
+ * a lie). Classifying it as a plain `client` error, which is what the
+ * status-code fallback does, ends the turn on something that answers to a
+ * retry.
+ *
+ * `code 11128` is deliberately NOT a marker on its own: the same code reports a
+ * rejected `developer` role on CN and a missing leading `system` message
+ * internationally, both of which this client already fixes at the body level.
+ * Only the channel-verification wording identifies the gateway verdict.
+ */
+const CHANNEL_CHECK_MARKERS: readonly string[] = [
+  'unapproved channel',
+  'channel verification',
+  'not sent from an official client',
+  '没通过渠道校验',
 ]
 
 /** The concrete effort spellings WorkBuddy exposes on the wire. */
@@ -389,6 +426,12 @@ export function classifyUpstreamError(status: number, body: string): UpstreamErr
   for (const marker of SESSION_DEAD_MARKERS) {
     if (body.includes(marker)) return 'session_dead'
   }
+  // Channel verification is a verdict about the call, not the account or the
+  // credential — see {@link CHANNEL_CHECK_MARKERS}. Checked before the status
+  // fallbacks so its 400 does not collapse into the terminal `client` class.
+  for (const marker of CHANNEL_CHECK_MARKERS) {
+    if (lower.includes(marker.toLowerCase()) || body.includes(marker)) return 'channel_check'
+  }
   if (status === 429) return 'soft_rate'
   if (status === 404) return 'not_found'
   if (status >= 500) return 'server'
@@ -408,7 +451,19 @@ export function classifyUpstreamError(status: number, body: string): UpstreamErr
  */
 export function extractDisplayErrorMessage(body: string): string | undefined {
   const parsed = parseJsonObject(body.trim())
-  if (!parsed) return undefined
+  if (parsed !== undefined) {
+    const fromDocument = displayMessageOf(parsed)
+    if (fromDocument !== undefined) return fromDocument
+  }
+  // A body that was cut short — by a cap, or by a connection dropped
+  // mid-answer — is not parseable, and giving up on it threw away the one
+  // line the user needed. Recovering the fields textually is a fallback for
+  // that case, never the primary path.
+  return displayMessageOfJsonText(body)
+}
+
+/** The structured message of an already-parsed envelope. */
+function displayMessageOf(parsed: Record<string, unknown>): string | undefined {
   const displayMsg = parsed['displayMsg']
   if (isJsonObject(displayMsg)) {
     const zh = displayMsg['zh']
@@ -418,6 +473,54 @@ export function extractDisplayErrorMessage(body: string): string | undefined {
   }
   const msg = parsed['msg']
   if (typeof msg === 'string' && msg.trim() !== '') return msg.trim()
+  return undefined
+}
+
+/**
+ * Best-effort read of the same three fields out of a body that will not parse.
+ *
+ * Deliberately narrow: it looks for one field name, then takes the JSON string
+ * literal that follows it — honouring escapes, and requiring the closing quote
+ * to still be there. A body cut inside a value therefore yields nothing rather
+ * than half a sentence, which is the failure mode worth avoiding here.
+ */
+function displayMessageOfJsonText(body: string): string | undefined {
+  // Same preference order as {@link displayMessageOf}: zh, then en, then `msg`.
+  return readJsonStringField(body, 'zh')
+    ?? readJsonStringField(body, 'en')
+    ?? readJsonStringField(body, 'msg')
+}
+
+/** One `"key": "value"` pair's decoded value, if the literal is complete. */
+function readJsonStringField(body: string, key: string): string | undefined {
+  const marker = '"' + key + '"'
+  for (let at = body.indexOf(marker); at !== -1; at = body.indexOf(marker, at + marker.length)) {
+    let cursor = at + marker.length
+    while (cursor < body.length && (body[cursor] === ' ' || body[cursor] === '\t' || body[cursor] === '\n' || body[cursor] === '\r')) cursor += 1
+    if (body[cursor] !== ':') continue
+    cursor += 1
+    while (cursor < body.length && (body[cursor] === ' ' || body[cursor] === '\t' || body[cursor] === '\n' || body[cursor] === '\r')) cursor += 1
+    if (body[cursor] !== '"') continue
+    const start = cursor
+    cursor += 1
+    let escaped = false
+    for (; cursor < body.length; cursor += 1) {
+      const ch = body[cursor]
+      if (escaped) { escaped = false; continue }
+      if (ch === '\\') { escaped = true; continue }
+      if (ch === '"') break
+    }
+    if (cursor >= body.length) return undefined
+    let decoded: unknown
+    try {
+      decoded = JSON.parse(body.slice(start, cursor + 1))
+    } catch {
+      continue
+    }
+    if (typeof decoded !== 'string') continue
+    const trimmed = decoded.trim()
+    if (trimmed !== '') return trimmed
+  }
   return undefined
 }
 
@@ -496,10 +599,19 @@ function channelHeaders(channel: ChatChannel): Record<string, string> {
     'X-Conversation-ID': channel.conversationId,
     'X-Conversation-Request-ID': channel.requestId,
     'X-Conversation-Message-ID': channel.messageId,
-    // The official client sends the message id as the request id too, and the
-    // root request id on every call of the conversation it opened.
+    // The official client sends the message id as the request id too.
     'X-Request-ID': channel.messageId,
-    'X-Root-Request-ID': channel.rootRequestId,
+    // `acp-connection-id` is not optional decoration: `applyGatewayHeaders` in
+    // the shipped app's gateway proxy sets it on every chat request, from the
+    // session ledger's per-session metadata. Omitting it was the one header
+    // the plugin never sent at all, and "channel verification" is the failure
+    // that names exactly this. See {@link ChatChannel.acpConnectionId} for why
+    // this one is minted rather than handshaked.
+    'acp-connection-id': channel.acpConnectionId,
+    // `X-Root-Request-ID` is conditional upstream: `buildConversationHeaders`
+    // only sets it when the session has a `rootRequestId` (fork / subagent).
+    // A top-level conversation's every call carries no root header at all, so
+    // sending one unconditionally was an extra claim, not an alignment.
   }
 }
 
@@ -592,11 +704,17 @@ function chatHeaders(
     'X-Requested-With': 'XMLHttpRequest',
     'User-Agent': userAgent,
     // 安全红线：chat 请求绝不携带 refresh token。
-    ...credential.uid === '' ? { 'X-No-User-Id': '1' } : { 'X-User-Id': credential.uid },
+    //
+    // Absent, not negated: the official client simply omits an identity header
+    // it has no value for. The `X-No-User-Id` / `X-No-Enterprise-Id` /
+    // `X-No-Department-Info` family exists only on `/v2/auth/state` — where the
+    // caller really is anonymous — and carrying it on chat was the plugin
+    // asserting something the shipped client never asserts on this endpoint.
+    ...credential.uid === '' ? {} : { 'X-User-Id': credential.uid },
     ...credential.enterpriseId === undefined || credential.enterpriseId === ''
-      ? { 'X-No-Enterprise-Id': '1' }
+      ? {}
       : { 'X-Enterprise-Id': credential.enterpriseId, 'X-Tenant-Id': credential.enterpriseId },
-    ...credential.domain === '' ? { 'X-No-Department-Info': '1' } : { 'X-Domain': credential.domain },
+    ...credential.domain === '' ? {} : { 'X-Domain': credential.domain },
     // IDE attribution, ported from the desktop app's own requests. Type and
     // name stay literal because they name the product family rather than this
     // build (the two regions differ only in the UA's product token); the
@@ -802,6 +920,18 @@ export interface WorkBuddyCatalogFetch {
   appVersion?: AppVersionInfo
 }
 
+/**
+ * The key a chat conversation is filed under.
+ *
+ * Account identity, not process identity: the gateway's conversation belongs to
+ * the account, and two accounts sharing one conversation id would be a claim it
+ * can see through. Shared with {@link WorkBuddyUpstreamClient.abandonChannel},
+ * which must derive exactly the same key or the reset would miss.
+ */
+function channelKeyOf(credential: WorkBuddyCredential): string {
+  return `${credential.uid}:${credential.enterpriseId ?? ''}`
+}
+
 /** Constructor dependencies. */
 export interface WorkBuddyUpstreamClientOptions {
   /** App-version resolver for international catalog requests; injectable for tests. */
@@ -856,7 +986,19 @@ export class WorkBuddyUpstreamClient {
    * would be a claim the upstream can see through.
    */
   private channelFor(credential: WorkBuddyCredential): ChatChannel {
-    return this.channels.claim(`${credential.uid}:${credential.enterpriseId ?? ''}`)
+    return this.channels.claim(channelKeyOf(credential))
+  }
+
+  /**
+   * Forget the account's conversation after a refusal that names the call.
+   *
+   * A channel-verification refusal says "this invocation did not pass", and the
+   * upstream's own message asks for a resend. Reusing the same conversation and
+   * ACP connection for that resend would present the identical claim that was
+   * just refused; a fresh conversation is the only lever this side has.
+   */
+  private abandonChannel(credential: WorkBuddyCredential): void {
+    this.channels.reset(channelKeyOf(credential))
   }
 
   /** POST the chat endpoint; a successful answer is the raw SSE response. */
@@ -900,10 +1042,14 @@ export class WorkBuddyUpstreamClient {
     if (response.ok) return { ok: true, response }
     const retryAfter = response.headers.get('retry-after') ?? undefined
     const text = (await response.text()).slice(0, ERROR_BODY_LIMIT)
+    const kind = classifyUpstreamError(response.status, text)
+    // A refused call must not be resubmitted under the same channel identity;
+    // see {@link abandonChannel}.
+    if (kind === 'channel_check') this.abandonChannel(credential)
     return {
       ok: false,
       status: response.status,
-      kind: classifyUpstreamError(response.status, text),
+      kind,
       message: text,
       ...retryAfter === undefined ? {} : { retryAfter },
     }
