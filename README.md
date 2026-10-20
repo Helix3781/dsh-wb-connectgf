@@ -6,7 +6,7 @@
 
 **corrinehu/dsh-workbuddy-connect 的 Functy 分支：仪表盘界面、多账号轮换与额度展示，把 WorkBuddy 桌面 App 的模型接到 DeepSeek Harness。**
 
-[![dsh-workbuddy-connect-functy](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.14-4F46E5)](https://github.com/functy23/dsh-workbuddy-connect-functy)
+[![dsh-workbuddy-connect-functy](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.17-4F46E5)](https://github.com/functy23/dsh-workbuddy-connect-functy)
 [![Language](https://img.shields.io/badge/language-TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Top Language](https://img.shields.io/github/languages/top/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/functy23/dsh-workbuddy-connect-functy)
@@ -32,7 +32,7 @@
 
 对照上游稳定版 **0.7.8**（2026-10-17）。两边都有的不写进「本仓库才有」。
 
-| | 上游 `dsh-workbuddy-connect` 0.7.8 | 本仓库 0.13.14 |
+| | 上游 `dsh-workbuddy-connect` 0.7.8 | 本仓库 0.13.17 |
 |---|---|---|
 | 界面 | 设置里两张旧插件卡片 | 侧栏额度卡 + 中栏仪表盘 + 设置分区页（账号按产品合并成卡片，额度/用量/token/恢复时间都在名字下一行） |
 | 账号 | 跟桌面 App 当前这一份登录 | 多账号池：轮换、扫码、令牌、桌面凭证；删除后不会被 30 秒扫描加回来；同一产品的账号合并在一张卡片里 |
@@ -75,7 +75,14 @@
 
 前置：已安装并登录 WorkBuddy 桌面 App（国际版同理）。核心必须对上，否则 DSH 起不来。
 
-**本版 `0.13.14`** 面向 DSH `0.1.7-alpha.1`、`0.2.0-rc.1`、`0.2.0-rc.2`、`0.2.1-rc.2`。再往后的 prerelease 不会自动覆盖。
+> **⚠️ 此次更新跨度较大，并未经过充分测试，更新后可能出现显示问题以及其他更严重的问题。**
+> 升级前建议备份 `~/.dsh`（尤其 `.workbuddy-*.json` 状态文件与 `profiles/<profile>/cordis.patch.yml`）。
+>
+> 本版另有两处**不兼容变化**：entry id 改为 `llm-workbuddy-functy`；locale 命名空间改为
+> `settings.workbuddy.functy` / `panel.workbuddy.functy`。与上游 `dsh-workbuddy-connect` 同时安装会
+> 因 provider id 冲突导致发消息失败，请只保留一个。
+
+**本版 `0.13.17`** 面向 DSH `0.1.7-alpha.1`、`0.2.0-rc.1`、`0.2.0-rc.2`、`0.2.1-rc.2`。再往后的 prerelease 不会自动覆盖。
 
 > **不要装 npm 上的 `dsh-workbuddy-connect`。** 那是上游包，和本仓库不是同一条线。
 

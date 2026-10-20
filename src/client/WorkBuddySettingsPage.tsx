@@ -52,6 +52,7 @@ import type {
   WorkBuddyAccountResult,
   WorkBuddyQrChallenge,
   WorkBuddyWebAccount,
+  WorkBuddyWebCheckinRow,
   WorkBuddyWebModelBadge,
   WorkBuddyWebProbeSection,
   WorkBuddyWebStatus,
@@ -406,7 +407,7 @@ function promotionChips(model: WorkBuddyWebModelBadge, freeLabel: string): strin
  * models in front of you is the moment you notice one has no levels declared,
  * and having to go and pick that model first to fix it was the roundabout part.
  */
-function ModelsBlock({ variant, status, probe, busy, t, staged, context, onContext, onRefresh, onDetect, onClearProbe, onStage, onOpenLink }: {
+function ModelsBlock({ variant, status, probe, busy, t, staged, context, onContext, onRefresh, onDetect, onClearProbe, onStage }: {
   variant: WorkBuddyCardVariant
   status: WorkBuddyWebStatus | undefined
   /** Detection state, from the status document: consent, candidates, results. */
@@ -423,7 +424,6 @@ function ModelsBlock({ variant, status, probe, busy, t, staged, context, onConte
   onClearProbe: () => void
   /** Stage one product's model filter; `undefined` stages a discard. */
   onStage: (next: { filterOn: boolean, allowlist: readonly string[] } | undefined) => void
-  onOpenLink: (url: string) => void
 }): React.ReactNode {
   const signedIn = status !== undefined && status.status === 'signed-in' ? status : undefined
   const models = signedIn?.models ?? []
@@ -495,15 +495,11 @@ function ModelsBlock({ variant, status, probe, busy, t, staged, context, onConte
             ? t('modelsSourceSaved', { time: format.format(new Date(catalog.fetchedAt)) })
             : t('modelsSourceFallback')}
       </span>
-  // The product prefix is not decoration: the two variants share model ids and
-  // render as two groups of the same names, so a heading without it leaves the
-  // reader to infer which list they are reading from its position on the page.
-  const heading = `${variant.appName} · ${t('modelsHeading')}${models.length === 0 ? '' : ` · ${t('modelsCount', { count: models.length })}`}`
+  // This block draws ROWS only. The heading, the product switch and the Refresh
+  // button belong to `ModelsSection`, which wraps it: one group is shown at a
+  // time, and a second heading inside would stack two titles over one list.
   return (
-    <SettingsGroup
-      title={heading}
-      action={<ActionButton label={t('modelsRefresh')} disabled={busy} onClick={onRefresh} />}
-    >
+    <>
       {catalogNote === undefined ? null : (
         <div className="wbp-row wbp-rowFlush">
           <div className="wbp-rowText">{catalogNote}</div>
@@ -598,7 +594,15 @@ function ModelsBlock({ variant, status, probe, busy, t, staged, context, onConte
                   * state rather than as the absence of one.
                   */}
                 {!filterOn || models.length === 0 || pickerSelection.includes(model.id) ? null : (
-                  <span className="wbp-modelFiltered" title={t('filterModelsLabel')} aria-label={t('filterModelsLabel')} />
+                  // The mark means ONE thing: this model is excluded by the filter
+                  // above. It is therefore absent from the model the filter KEEPS,
+                  // which is why a single row without a dot is the expected
+                  // picture with a one-model allowlist — not a missing status.
+                  <span
+                    className="wbp-modelFiltered"
+                    title={t('filterModelsExcludedHint')}
+                    aria-label={t('filterModelsExcludedHint')}
+                  />
                 )}
                 <span className="wbp-modelName" title={model.name}>{model.name}</span>
                 {/* Promotions sit beside the name: they are part of what the
@@ -694,6 +698,99 @@ function ModelsBlock({ variant, status, probe, busy, t, staged, context, onConte
               )}
             </div>
           ))}
+    </>
+  )
+}
+
+/**
+ * The model lists, one product at a time.
+ *
+ * Why one list instead of two stacked ones: the two rosters are long (twenty
+ * rows each) and share most of their model ids, so showing both doubled the page
+ * height for information a reader consults one product at a time. The switch
+ * sits where a reader already looks for the list's controls — left of Refresh,
+ * on the heading line — and slides, so flipping between the products reads as
+ * changing which list is shown rather than as reloading the page.
+ *
+ * A segmented control rather than tabs: the two products are the same kind of
+ * thing seen alternately, not two destinations. It is the platform's own
+ * segmented shape (a raised pill sliding under the selected segment), which is
+ * what every other two-way choice in this plugin already uses.
+ */
+function ModelsSection({ variants, statuses, probeFor, busy, t, context, stagedModels, onContext, onRefresh, onDetect, onClearProbe, onStage }: {
+  variants: readonly WorkBuddyCardVariant[]
+  statuses: Partial<Record<string, WorkBuddyWebStatus>>
+  probeFor: (variant: WorkBuddyCardVariant) => WorkBuddyWebProbeSection | undefined
+  busy: boolean
+  t: Translate
+  context: WorkBuddyExternalOpenOptions['context']
+  stagedModels: Record<string, { filterOn: boolean, allowlist: readonly string[] }>
+  onContext: (variant: WorkBuddyCardVariant, model: string, length: number) => void
+  onRefresh: (variant: WorkBuddyCardVariant) => void
+  onDetect: (variant: WorkBuddyCardVariant, model: string) => void
+  onClearProbe: (variant: WorkBuddyCardVariant) => void
+  onStage: (variant: WorkBuddyCardVariant, next: { filterOn: boolean, allowlist: readonly string[] } | undefined) => void
+}): React.ReactNode {
+  /**
+   * Which list is on screen.
+   *
+   * Seeded with the first product and then left alone: the page keeps the
+   * choice for its lifetime, because a reader flipping to the other product is
+   * doing a comparison, and a re-render that snapped back would undo it.
+   */
+  const [shown, setShown] = useState(variants[0]?.id ?? '')
+  const active = variants.find(variant => variant.id === shown) ?? variants[0]
+  const count = (variant: WorkBuddyCardVariant): number => {
+    const status = statuses[variant.id]
+    return status !== undefined && status.status === 'signed-in' ? status.models?.length ?? 0 : 0
+  }
+  if (active === undefined) return null
+  return (
+    <SettingsGroup
+      title={t('modelsHeading')}
+      action={(
+        <>
+          {variants.length < 2 ? null : (
+            <SegmentedField
+              label={t('modelsSwitchLabel')}
+              value={active.id}
+              disabled={busy}
+              options={variants.map(variant => ({
+                value: variant.id,
+                // The product name alone: the count is in the heading and in
+                // each row, so a number here would be a third place to read it
+                // and a second way for the two to disagree.
+                label: variant.appName,
+                title: t('modelsSwitchTitle', { product: variant.appName, count: count(variant) }),
+              }))}
+              onChange={setShown}
+            />
+          )}
+          <ActionButton label={t('modelsRefresh')} disabled={busy} onClick={() => { onRefresh(active) }} />
+        </>
+      )}
+    >
+      {/*
+        * `key` on the product: switching remounts the block, which is what drops
+        * the previous product's open probe confirmation. Without it a pending
+        * "send test requests to this model?" would survive the switch and point
+        * at a model id the new list may not even carry.
+        */}
+      <ModelsBlock
+        key={active.id}
+        variant={active}
+        status={statuses[active.id]}
+        probe={probeFor(active)}
+        busy={busy}
+        t={t}
+        context={context}
+        staged={stagedModels[active.id]}
+        onContext={(model, length) => { onContext(active, model, length) }}
+        onRefresh={() => { onRefresh(active) }}
+        onDetect={model => { onDetect(active, model) }}
+        onClearProbe={() => { onClearProbe(active) }}
+        onStage={next => { onStage(active, next) }}
+      />
     </SettingsGroup>
   )
 }
@@ -875,6 +972,23 @@ function ProductAccountsCard({ variant, accounts, status, busy, now, t, onAction
       )}
     </section>
   )
+}
+
+/**
+ * One account's check-in state, in one sentence.
+ *
+ * The record and the run answer different questions, so the line states the
+ * record first (when this account last claimed a day) and appends the most
+ * recent outcome only when it disagrees — a successful run repeats what the
+ * record already says, and saying it twice reads as two separate events.
+ */
+function checkinLine(row: WorkBuddyWebCheckinRow, t: Translate): string {
+  const parts: string[] = []
+  if (row.day !== undefined) parts.push(t('checkinRowDay', { day: row.day }))
+  else parts.push(t('checkinRowNever'))
+  if (row.state === 'failed') parts.push(t('checkinRowFailed', { reason: row.reason ?? '' }))
+  else if (row.state === 'skipped') parts.push(t('checkinRowSkipped', { reason: row.reason ?? '' }))
+  return parts.join(' · ')
 }
 
 /** The list a user picks a product from before the login dialog opens. */
@@ -1664,6 +1778,40 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
       .finally(() => { if (mounted.current) setBusy(false) })
   }, [readAll, refreshPanel, run, t])
 
+  /**
+   * The preference values this page has just written, before the re-read lands.
+   *
+   * A write is a round trip plus a full re-read of both products' status routes,
+   * and the re-read is the slow half: each route re-reads its pool, and on a
+   * cold credit cache that is a billing request per account (measured here at
+   * 0.35s for the CN route and 1.3s for the international one). Staging the
+   * control's own value locally makes the switch move in the same click, and the
+   * document replaces it when it arrives — the same "paint first, confirm after"
+   * shape the status cache uses.
+   *
+   * Only the fields this page OWNS are staged; anything the host computes stays
+   * whatever the document says.
+   */
+  /**
+   * Which product's model list the page shows.
+   *
+   * The two rosters are long (twenty rows each) and share most of their ids, so
+   * stacking them doubled the page for no gain: a reader works on ONE product's
+   * list at a time. A switch instead of tabs because the two are the same kind of
+   * thing seen alternately, not two destinations.
+   *
+   * Default follows the pool: the first product that actually has a model list.
+   * A product with no models shows its empty state rather than a blank panel.
+   */
+  const [modelsShown, setModelsShown] = useState<string>(CARD_VARIANTS[0]?.id ?? '')
+  const [writtenPreferences, setWrittenPreferences] = useState<{
+    creditStyle?: WorkBuddySidebarCreditStyle
+    creditVisible?: boolean
+    composerVisible?: boolean
+    probeControlVisible?: boolean
+    checkinAuto?: boolean
+  }>({})
+
   /** The bucket this product's preferences are keyed by, when the document has one. */
   const visibilityAccount = useCallback((variant: WorkBuddyCardVariant): string | undefined => {
     const status = statuses[variant.id]
@@ -1797,14 +1945,22 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
    * must not drift between them: a 400/404 means this host does not know the
    * action, and that is the same story whichever control asked.
    */
-  const writeSidebarPreference = useCallback((body: Record<string, unknown>): void => {
+  const writeSidebarPreference = useCallback((
+    body: Record<string, unknown>,
+    staged: Partial<typeof writtenPreferences>,
+  ): void => {
     const variant = CARD_VARIANTS[0]
     const key = variant === undefined ? undefined : keyFor(variant)
     if (variant === undefined || key === undefined) {
       setError(blockedReason(variant ?? CARD_VARIANTS[1] as WorkBuddyCardVariant) ?? t('requestFailed'))
       return
     }
-    setBusy(true)
+    // Paint the control's own value now. The re-read below is the slow half of
+    // this round trip — two status routes, each of which may spend one billing
+    // request per account — and a switch that sits still for a second after the
+    // click reads as one that did not take. `busy` is deliberately NOT set: it
+    // would disable the control for the length of that re-read.
+    setWrittenPreferences(current => ({ ...current, ...staged }))
     setError(undefined)
     setNotice(undefined)
     void fetch(variant.probePath, {
@@ -1818,23 +1974,72 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
         if (!response.ok) {
           setError(response.status === 400 || response.status === 404
             ? t('sidebarSettingUnsupported')
-            : `HTTP ${String(response.status)}`)
+            : 'HTTP ' + String(response.status))
+          // The write did not land, so the painted value is a lie: drop it and
+          // let the document's own answer show through again.
+          setWrittenPreferences({})
         } else if (typeof value === 'object' && value !== null && 'state' in value && value.state !== 'updated') {
           setError(String((value as Record<string, unknown>)['reason'] ?? t('requestFailed')))
+          setWrittenPreferences({})
         }
-        await readAll()
-        // The sidebar is drawn from ITS OWN read of the same documents, so it is
-        // told to re-read now rather than at its next minute tick: the user just
-        // changed how that card looks and will be looking at it.
+        // Deliberately NOT readAll() here. The value this write changed is
+        // already on screen (staged above), and a full re-read costs two status
+        // routes — the international one measured at 1.3s against a live
+        // account — for facts this write did not touch. The page's own minute
+        // tick still re-reads, so a host that stored something other than what
+        // was asked for corrects itself without a click.
+        //
+        // The sidebar IS told to re-read: it draws from the same documents and
+        // the user is looking straight at it.
         refreshPanel?.()
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : t('requestFailed'))
+        setWrittenPreferences({})
+      })
+  }, [blockedReason, keyFor, readAll, refreshPanel, t])
+
+    /**
+   * Claim one account's daily check-in now.
+   *
+   * A write that spends a round trip rather than credit, so it needs the same
+   * in-process key as the other actions but no confirmation step: the upstream
+   * is idempotent, and re-asking after "already" costs nothing.
+   */
+  const checkInAccount = useCallback((variant: WorkBuddyCardVariant, accountId: string): void => {
+    const key = keyFor(variant)
+    if (key === undefined) return
+    setBusy(true)
+    setError(undefined)
+    void fetch(variant.probePath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-WorkBuddy-Probe-Key': key },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action: 'check-in', account: accountId }),
+    })
+      .then(async response => {
+        const value: unknown = await response.json().catch(() => undefined)
+        if (!response.ok) {
+          setError('HTTP ' + String(response.status))
+        } else if (typeof value === 'object' && value !== null && 'state' in value && value.state === 'failed') {
+          setError(String((value as Record<string, unknown>)['reason'] ?? t('requestFailed')))
+        }
+        // A check-in changes the balance, so the documents are re-read: this is
+        // the one write whose point IS the new figures.
+        await readAll()
       })
       .catch((cause: unknown) => { setError(cause instanceof Error ? cause.message : t('requestFailed')) })
       .finally(() => { if (mounted.current) setBusy(false) })
-  }, [blockedReason, keyFor, readAll, refreshPanel, t])
+  }, [keyFor, readAll, t])
+
+  /** Toggle the daily check-in preference. */
+  const setCheckinAuto = useCallback((enabled: boolean): void => {
+    writeSidebarPreference({ action: 'set-checkin-auto', enabled }, { checkinAuto: enabled })
+  }, [writeSidebarPreference])
 
   /** Store the sidebar's credit-line style. */
   const setCreditStyle = useCallback((style: WorkBuddySidebarCreditStyle): void => {
-    writeSidebarPreference({ action: 'set-sidebar-credit-style', creditStyle: style })
+    writeSidebarPreference({ action: 'set-sidebar-credit-style', creditStyle: style }, { creditStyle: style })
   }, [writeSidebarPreference])
 
   /**
@@ -1845,7 +2050,7 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
    * is off: the card is the plugin's only other route there.
    */
   const setCreditVisible = useCallback((visible: boolean): void => {
-    writeSidebarPreference({ action: 'set-sidebar-credit-visible', enabled: visible })
+    writeSidebarPreference({ action: 'set-sidebar-credit-visible', enabled: visible }, { creditVisible: visible })
   }, [writeSidebarPreference])
 
   /**
@@ -1856,7 +2061,7 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
    * implies the other.
    */
   const setComposerCreditVisible = useCallback((visible: boolean): void => {
-    writeSidebarPreference({ action: 'set-composer-credit-visible', enabled: visible })
+    writeSidebarPreference({ action: 'set-composer-credit-visible', enabled: visible }, { composerVisible: visible })
   }, [writeSidebarPreference])
 
   /**
@@ -1867,7 +2072,7 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
    * may want independently.
    */
   const setProbeControlVisible = useCallback((visible: boolean): void => {
-    writeSidebarPreference({ action: 'set-probe-control-visible', enabled: visible })
+    writeSidebarPreference({ action: 'set-probe-control-visible', enabled: visible }, { probeControlVisible: visible })
   }, [writeSidebarPreference])
 
   /**
@@ -1951,6 +2156,22 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
     return (status.accounts?.accounts ?? []).map(account => ({ account, variant }))
   })
 
+  /**
+   * The check-in section, read from whichever document carries one.
+   *
+   * Both variants answer with their own section, so the page merges them: the
+   * preference is plugin-wide (one clock, one switch) while the rows are per
+   * pool — a CN account's claim must never stand in for an international one's.
+   */
+  const checkinSections = CARD_VARIANTS.flatMap(variant => {
+    const status = statuses[variant.id]
+    const section = status === undefined || !('checkin' in status) ? undefined : status.checkin
+    return section === undefined ? [] : [{ variant, section }]
+  })
+  /** The plugin-wide switch, when any document states it. */
+  const currentCheckinAuto: boolean | undefined =
+    writtenPreferences.checkinAuto ?? statedPreference(statuses, status => status.checkinAuto)
+
   /** Whether anything is waiting to be written; the bar's whole condition. */
   const hasStaged = Object.keys(stagedModels).length > 0
 
@@ -1963,7 +2184,7 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
    * control that cannot be saved is worse than no control.
    */
   const currentCreditStyle: WorkBuddySidebarCreditStyle | undefined =
-    statedPreference(statuses, status => status.sidebarCreditStyle)
+    writtenPreferences.creditStyle ?? statedPreference(statuses, status => status.sidebarCreditStyle)
 
   /**
    * Whether the host says the sidebar keeps its card, when it says anything.
@@ -1976,7 +2197,7 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
    * about the state it is editing.
    */
   const currentCreditVisible: boolean | undefined =
-    statedPreference(statuses, status => status.sidebarCreditVisible)
+    writtenPreferences.creditVisible ?? statedPreference(statuses, status => status.sidebarCreditVisible)
 
   /**
    * Whether the host says the composer keeps its badge, when it says anything.
@@ -1985,11 +2206,11 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
    * and the same reason: a control that cannot be saved is worse than no control.
    */
   const currentComposerCreditVisible: boolean | undefined =
-    statedPreference(statuses, status => status.composerCreditVisible)
+    writtenPreferences.composerVisible ?? statedPreference(statuses, status => status.composerCreditVisible)
 
   /** Whether the host says the composer keeps its detection control. */
   const currentProbeControlVisible: boolean | undefined =
-    statedPreference(statuses, status => status.probeControlVisible)
+    writtenPreferences.probeControlVisible ?? statedPreference(statuses, status => status.probeControlVisible)
 
   return (
     // The reference layout: a 720px column of groups of hairline-separated rows.
@@ -2012,24 +2233,20 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
           onAction={accountAction}
           onRefreshAll={refreshAllAccounts}
         />
-        {CARD_VARIANTS.map(variant => (
-          <ModelsBlock
-            key={variant.id}
-            variant={variant}
-            status={statuses[variant.id]}
-            probe={probeFor(variant)}
-            busy={busy}
-            t={t}
-            context={context}
-            staged={stagedModels[variant.id]}
-            onContext={(model, length) => { accountAction(variant, { action: 'context', model, length }) }}
-            onRefresh={() => { refreshModels(variant) }}
-            onDetect={model => { probeAction(variant, { action: 'probe', model }) }}
-            onClearProbe={() => { probeAction(variant, { action: 'clear' }) }}
-            onStage={next => { stageModels(variant, next) }}
-            onOpenLink={url => { void openSignInPage(variant, url) }}
-          />
-        ))}
+        <ModelsSection
+          variants={CARD_VARIANTS}
+          statuses={statuses}
+          probeFor={probeFor}
+          busy={busy}
+          t={t}
+          context={context}
+          stagedModels={stagedModels}
+          onContext={(variant, model, length) => { accountAction(variant, { action: 'context', model, length }) }}
+          onRefresh={variant => { refreshModels(variant) }}
+          onDetect={(variant, model) => { probeAction(variant, { action: 'probe', model }) }}
+          onClearProbe={variant => { probeAction(variant, { action: 'clear' }) }}
+          onStage={(variant, next) => { stageModels(variant, next) }}
+        />
       </>
       {error === undefined ? null : (
         <p className="wbp-rowError">{error}</p>
@@ -2060,6 +2277,49 @@ export function WorkBuddySettingsPage({ t, context, refreshPanel }: WorkBuddySet
         * `undefined`: a host that cannot state the preference is not a host that
         * turned the card off.
         */}
+      {/*
+        * Check-in: one switch for whether the plugin does it at all, then one
+        * row per account stating what the record and the last run say. Kept
+        * apart from the display switches above because it is not about how a
+        * surface is DRAWN — it spends a request against the user's account.
+        */}
+      {currentCheckinAuto === undefined && checkinSections.length === 0 ? null : (
+        <SettingsGroup title={t('checkinHeading')} description={t('checkinHint')}>
+          {currentCheckinAuto === undefined ? null : (
+            <SettingRow
+              title={t('checkinAutoLabel')}
+              titleFor="wbp-checkin-auto"
+              description={t('checkinAutoHint')}
+              control={(
+                <ToggleField
+                  id="wbp-checkin-auto"
+                  label={t('checkinAutoLabel')}
+                  checked={currentCheckinAuto}
+                  disabled={busy}
+                  onChange={setCheckinAuto}
+                />
+              )}
+            />
+          )}
+          {checkinSections.flatMap(({ variant, section }) => section.rows.map(row => {
+            const account = taggedAccounts.find(entry => entry.variant.id === variant.id && entry.account.id === row.accountId)?.account
+            return (
+              <SettingRow
+                key={`${variant.id}:${row.accountId}`}
+                title={account?.name ?? row.accountId}
+                description={checkinLine(row, t)}
+                control={(
+                  <ActionButton
+                    label={t('checkinRunNow')}
+                    disabled={busy}
+                    onClick={() => { checkInAccount(variant, row.accountId) }}
+                  />
+                )}
+              />
+            )
+          }))}
+        </SettingsGroup>
+      )}
       {currentCreditVisible === undefined
         && currentCreditStyle === undefined
         && currentComposerCreditVisible === undefined

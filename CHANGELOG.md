@@ -2,6 +2,61 @@
 
 版本号即 git tag，遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.13.17] — 2026-10-20
+
+> **此次更新跨度较大，并未经过充分测试，更新后可能出现显示问题以及其他更严重的问题。**
+>
+> 建议升级前备份 `~/.dsh`（尤其是 `.workbuddy-*.json` 状态文件与 `profiles/<profile>/cordis.patch.yml`），出问题时便于回退。
+
+
+### 1. 限流状态直接显示剩余时间
+
+账号行的状态 chip 原来写「限流中」，现在写「4 小时」（数字与单位间有空格）。原因（额度耗尽）保留并与时间并列：「额度耗尽 · 2 小时」——那一个词决定用户是等待还是换号，只给时间就丢了这层信息。
+
+同时删掉灰字里重复的倒计时：之前同一个行里既写「限流中 · 7 分钟后重试」，灰字又写「7 分钟后恢复」。现在等待时间只在 chip 里出现一次；灰字只保留**额度周期重置**（`creditsResetAtMs`），那是另一件事——bench 解除后它仍在。
+
+### 2. 改设置为什么慢（写入其实一直失败）
+
+实测出来两件事，其中一件是真 bug：
+
+- **写入返回 `state: failed`**：`Configuration for "llm-workbuddy" is overridden by a home patch or command-line overlay`。宿主 `config-editor` 在写入前会把结果与 profile 的 patch 层比对，而本机 `cordis.patch.yml` 给 `llm-workbuddy` 写了 `config:`（`probeControlVisible` / `sidebarCreditVisible`），于是每次 `forms.update` 都被拒。这是 profile 配置问题，不是代码问题 —— 要改的是把这两个字段从 patch 里删掉，或接受 patch 覆盖即写不进。
+- **界面仍要等**：旧实现在写之后 `await readAll()`，即两版状态路由各读一遍；实测 CN 0.35s、国际版 **1.3s**，且每个账号可能触发一次 billing。
+
+改动：
+- 写入改为**先画后确认**：点击瞬间把该开关的值放到本地（`writtenPreferences`），失败则回滚并显示原值；成功则保留，等页面自己的分钟轮询校正。
+- 写入成功后**不再 `readAll()`**：这次写只改了一个布尔/枚举，其余事实没有变化；侧栏仍收到 `refreshPanel()`（那是用户正看着的地方）。
+- 不再置 `busy`：开关不会因为一次重读而自我禁用，重复点击幂等。
+
+### 3. 侧栏卡片关闭状态下仍闪现一下
+
+根因：首帧快照为空，所有偏好回落到默认值，而 `sidebarCreditVisible` 的默认是 `true`，于是**关掉的卡片先被画出来**，等真实文档到达再消失。
+
+修法：视图新增 `preferencesSettled`（= `fetchedAt > 0`，即至少完成过一次轮询）。侧栏卡片与输入框徽标都先看这个标志——「还没问过」不画，而不是先猜一个默认值再当众纠正。轮询本身照常启动（gate 只影响画什么），一轮失败也仍算 settled，所以宿主挂掉时卡片还在、仪表盘仍可达。
+
+### 4. 多版本支持（当前从 Desktop 的 0.2.1-rc.2 起）
+
+新增两个模块，把「能不能装」和「能不能跑」分开：
+
+- `src/supported-hosts.ts`：支持矩阵（0.2.1-rc / 0.2.0-rc / 0.1.7-alpha 三行，每行记录对应的 pi-ai 代次与验证程度），并**由矩阵派生** peer range。测试把行与 `package.json` 的 peerDependencies 按集合比对，防止出现「表里加了、manifest 不认」这类上游踩过的坑（peer 钉死单个 prerelease 导致下一个版本装不上）。
+- `src/host-capabilities.ts`：运行期结构探测 —— 设置服务是 `configure`/`update` 还是旧的 `installSection`、`fs` 是否带 `processPathFromHostPath`。全部按宿主实际给的对象判断，不比对版本字符串；方法绑回原对象（0.2.x 实现依赖 `this`）。半残服务（只有 configure 没有 update）判为不可写，避免装出一个存不下的表单。
+- `index.ts` 的设置注入与图片路径翻译改用这两个探测。
+
+诚实说明：目前**只有 0.2.1-rc.2 一条线经过完整验证**（typecheck / 844+ 用例 / engine load / 两条状态路由 / 设置写入）。0.2.0-rc 与 0.1.7-alpha 是结构兼容（同代 API 形状），未另做构建验证——矩阵里逐行写明，不假装跑过。
+
+### 5. 自动签到
+
+按 `linguo2625469/workbuddy2api-panel` 验证过的线上行为实现（路径、请求头、拒绝标记都取自该实现）：
+
+- `src/checkin.ts`：`POST {billingBase}/v2/billing/meter/daily-checkin`（国际版先试无 `/v2` 前缀，404 再换），空 body `{}`，带 `X-User-Id` / `X-Enterprise-Id` / `X-Tenant-Id` / `X-Domain`。三种结局分开：`checked-in` / `already` / `failed`。「已签到」是**成功**而不是错误——否则第一次之后每次都像失败。仅 5xx 与传输失败重试（2s、4s 两次），4xx 与业务拒绝不重试。
+- `src/checkin-store.ts`：每变体一份记录（`.workbuddy-checkin.json` / `.workbuddy-ai-checkin.json`），按本地日 `YYYY-MM-DD` 判定「今天签过没有」。记录不做成布尔值：日期才是那个问题的答案，也扛得住改时区。
+- `src/checkin-service.ts`：每 15 分钟唤醒一次，唤醒本身零成本，直到本地日翻页才真的发请求。跳过停用与登录失效的账号；失败只警告，**不 bench 账号、不动登录态**——签到是赠品，不是用户请求的请求。手动 `checkOne` 不受记录限制。
+- 接线：`checkinAuto` 偏好（**默认关**，因为它会替用户花一次请求）、路由动作 `check-in` / `set-checkin-auto`、状态文档新增 `checkin` 段（每账号：记录日 + 上次结果）、设置页新增「每日签到」分组（一个开关 + 每账号一行 + 「立即签到」）。
+
+### 验证
+
+- `pnpm run typecheck` / `pnpm run test`（**63 文件 / 850 用例**）/ `pnpm run build` / `pnpm run test:engine` 全绿。
+- 新增 6 个测试文件：`supported-hosts`、`host-capabilities`、`checkin`、`checkin-store`、`checkin-service`，以及 settings-page / probe-route 里的签到与乐观写回归。
+- 顺带：`0.13.15` 的依赖代次跟随（`0.2.1-rc.2` + pi-ai `1.1.0`）在本版继续保持，peer 由矩阵派生为三线并集。
 ## [0.13.15] — 2026-10-19
 
 **修 issue #3：暂时为空的账号池被报成 401 session_dead**，宿主据此判 AUTH 并显示「API 密钥无效 / 未登录」，而 token 完全有效、账号一分钟后自愈。

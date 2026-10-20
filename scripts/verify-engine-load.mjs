@@ -87,7 +87,7 @@ await new Promise(resolve => setTimeout(resolve, 250))
 const providers = ctx.llm.listProviders().map(provider => provider.id)
 check('both providers register', providers.includes('workbuddy') && providers.includes('workbuddy-ai'), providers.join(','))
 check('the settings page policy was declared', settings.policies.some(policy => policy.auto === false))
-check('the config entry id is the profile row', WorkBuddy.PROFILE_ENTRY_ID === 'llm-workbuddy', WorkBuddy.PROFILE_ENTRY_ID)
+check('the config entry id is the fork own row', WorkBuddy.PROFILE_ENTRY_ID === 'llm-workbuddy-functy', WorkBuddy.PROFILE_ENTRY_ID)
 
 if (typeof WorkBuddy.applyMaximumContextWindow === 'function') {
   check('maximum-window application is exported', true)

@@ -129,6 +129,26 @@ export const WORKBUDDY_PREFERENCES = {
     // "Absent means present", for the same reason as the two above.
     stated: (value: boolean): boolean => value !== false,
   },
+  /**
+   * Whether the plugin claims the daily check-in for every pool member.
+   *
+   * Off by default, which is the opposite of the display switches above and for
+   * a different reason: those govern whether a surface is DRAWN, while this one
+   * spends a request against the user's own account without being asked. A
+   * plugin that did that on first launch would be presuming; one that offers it
+   * as a switch costs the user nothing to find.
+   *
+   * The upstream is idempotent ("already checked in" is an answer), so a missed
+   * or repeated day is harmless either way — this switch is about consent, not
+   * about correctness.
+   */
+  checkinAuto: {
+    field: z.boolean().default(false)
+      .description('Check in every WorkBuddy account once a day (the upstream grants daily credit for it)'),
+    // A plain boolean: "absent" and "off" mean the same thing here, unlike the
+    // display switches where an absent field must not remove a surface.
+    stated: (value: boolean): boolean => value === true,
+  },
 } as const
 
 /** Every preference's config-field name. */

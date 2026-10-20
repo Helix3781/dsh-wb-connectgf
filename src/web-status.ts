@@ -23,6 +23,7 @@ import { hostIsLoopback, originIsLoopback } from './loopback.ts'
 import { WORKBUDDY_STATUS_PATH } from './status-paths.ts'
 import type { WorkBuddyWebCatalog, WorkBuddyWebModelBadge, WorkBuddyWebProbeSection, WorkBuddyWebStatus, WorkBuddyWebVisibilitySection } from './status-paths.ts'
 import type { WorkBuddyStatedPreferences } from './preferences.ts'
+import type { WorkBuddyWebCheckin } from './status-paths.ts'
 
 export { WORKBUDDY_STATUS_PATH } from './status-paths.ts'
 export type { WorkBuddyWebStatus } from './status-paths.ts'
@@ -64,6 +65,14 @@ export interface WorkBuddyStatusRouteOptions {
    * document that never knew the setting.
    */
   preferences?: () => WorkBuddyStatedPreferences
+  /**
+   * The check-in section, when this variant has one.
+   *
+   * A getter rather than a value because the last run changes between reads: a
+   * check-in that lands while the page is open must be visible on the next poll
+   * without a restart.
+   */
+  checkin?: () => WorkBuddyWebCheckin
   /**
    * Why the pool is empty, when the reason is diagnosable.
    *
@@ -258,20 +267,28 @@ export async function workBuddyWebStatus(
   // "no models" is precisely the case a user needs explained, and it is the
   // only way to tell a hidden group from a failed fetch.
   const catalog = deps.catalog?.()
-  const withCatalog: WorkBuddyWebStatus = catalog === undefined ? status : { ...status, catalog }
+  const withCatalog = catalog === undefined ? status : { ...status, catalog }
   // Visibility rides the document beside the model list it qualifies. Absent
   // when no account-with-uid is in effect; the card keys its controls on the
   // section's presence.
   const visibility = deps.visibility?.()
-  const withVisibility: WorkBuddyWebStatus = visibility === undefined ? withCatalog : { ...withCatalog, visibility }
-  const statusWithModels: WorkBuddyWebStatus = modelsField.length > 0
-    ? { ...withVisibility, models: modelsField }
-    : withVisibility
+  const withVisibility = visibility === undefined ? withCatalog : { ...withCatalog, visibility }
+  // The check-in section rides the document the page already reads: the settings
+  // page can then show what the last run did without a second request, and a
+  // manual check-in is what makes the next poll show its own result.
+  const checkin = deps.checkin?.()
+  const withCheckin = checkin === undefined ? withVisibility : { ...withVisibility, checkin }
+  const statusWithModels = modelsField.length > 0
+    ? { ...withCheckin, models: modelsField }
+    : withCheckin
   // Probe state rides the signed-in document so the card can render the
   // consent switches and results without a second request. The control key
   // travels with it: this response already passed the loopback guard, and the
   // key authorizes only probe control, never credentials or completions.
-  let probed: WorkBuddyWebStatus = statusWithModels
+  // Typed as the SIGNED-IN arm rather than the union: everything below adds a
+  // field that only exists there (probe, credits), and widening to the union
+  // would make those additions a type error against the signed-out arm.
+  let probed: Extract<WorkBuddyWebStatus, { status: 'signed-in' }> = statusWithModels as Extract<WorkBuddyWebStatus, { status: 'signed-in' }>
   if (deps.probe !== undefined) {
     // The preference is offered only when the getter can answer a value; a
     // host that cannot persist it answers `undefined` and the field stays out

@@ -196,6 +196,12 @@ export function WorkBuddyCreditBadge({ directory, panel, t }: WorkBuddyCreditBad
 
   // The switch is checked before the figure is: a badge the user turned off must
   // leave nothing at all in the row, not a dimmed or empty placeholder.
+  //
+  // `preferencesSettled` comes first for the same reason the sidebar card gates
+  // on it: until one sweep lands, the switch's value is not knowable and its
+  // default is "present", so a badge the user had hidden would render for one
+  // frame and then disappear. The figure needs the sweep anyway.
+  if (!view.preferencesSettled) return null
   if (!view.composerCreditVisible) return null
   if (!available) return null
 

@@ -81,6 +81,8 @@ export const en = {
   accountExpired: 'Sign-in expired',
   modelsHeading: 'Models',
   modelsRefresh: 'Refresh list',
+  modelsSwitchLabel: 'Which model list',
+  modelsSwitchTitle: '{product} model list · {count} models',
   modelsCount: '{count} models',
   contextLabel: 'Context length',
   contextSwitchTitle: 'Run this model at {size}',
@@ -161,6 +163,7 @@ export const en = {
   filterModelsUnsupported: 'The running DSH host does not support this filter yet. Restart DSH Desktop and try again.',
   filterModelsFallback: 'Saved — this DSH session is running a pre-update copy of the plugin\'s host half, so the same filter was stored as per-model visibility. Restart DSH Desktop once and it will be stored as a filter list.',
   filterModelsCount: '{ticked} of {total} shown',
+  filterModelsExcludedHint: 'Hidden from the model picker by the filter above',
   filterModelsClear: 'Show all',
   // The model picker dropdown (ported from the Command Code provider's
   // ModelMultiSelect): a searchable checkbox menu rather than a column of
@@ -176,6 +179,15 @@ export const en = {
   saveBarSaving: 'Saving…',
   saveBarDiscard: 'Discard',
   saveBarSaved: 'Saved',
+  checkinHeading: 'Daily check-in',
+  checkinHint: 'The upstream grants daily credit for checking in. Off by default: the plugin never spends a request against your account unless you ask it to.',
+  checkinAutoLabel: 'Check in automatically',
+  checkinAutoHint: 'Once a day, for every account that can serve. A check-in never benches an account or changes its sign-in.',
+  checkinRunNow: 'Check in now',
+  checkinRowNever: 'not checked in yet',
+  checkinRowDay: 'checked in {day}',
+  checkinRowFailed: 'last attempt failed: {reason}',
+  checkinRowSkipped: 'skipped: {reason}',
 } as const
 
 export type WorkBuddySettingsKey = keyof typeof en
@@ -252,6 +264,8 @@ export const zh: Record<WorkBuddySettingsKey, string> = {
   accountExpired: '登录已过期',
   modelsHeading: '模型列表',
   modelsRefresh: '刷新列表',
+  modelsSwitchLabel: '模型列表切换',
+  modelsSwitchTitle: '{product} 的模型列表 · {count} 个模型',
   modelsCount: '{count} 个模型',
   contextLabel: '上下文长度',
   contextSwitchTitle: '以 {size} 运行该模型',
@@ -316,6 +330,7 @@ export const zh: Record<WorkBuddySettingsKey, string> = {
   filterModelsUnsupported: '当前运行的 DSH 宿主还不支持这个过滤功能，重启 DSH Desktop 后再试。',
   filterModelsFallback: '已保存 —— 本次 DSH 会话运行的是插件宿主半边的旧副本，所以同一个筛选被存成了「逐模型隐藏」。重启一次 DSH Desktop，就会按筛选列表存。',
   filterModelsCount: '已选 {ticked} / {total}',
+  filterModelsExcludedHint: '被上方筛选排除，不会出现在模型选择器里',
   filterModelsClear: '全部显示',
   modelPick: '选择模型',
   modelPickCount: '已选 {count} 个模型',
@@ -327,4 +342,13 @@ export const zh: Record<WorkBuddySettingsKey, string> = {
   saveBarSaving: '保存中…',
   saveBarDiscard: '放弃',
   saveBarSaved: '已保存',
+  checkinHeading: '每日签到',
+  checkinHint: '上游每日签到会发放积分。默认关闭：除非你打开，插件不会用你的账号发任何请求。',
+  checkinAutoLabel: '自动签到',
+  checkinAutoHint: '每天一次，覆盖每个可用账号。签到不会搁置账号，也不改动登录状态。',
+  checkinRunNow: '立即签到',
+  checkinRowNever: '尚未签到',
+  checkinRowDay: '签到于 {day}',
+  checkinRowFailed: '上次尝试失败：{reason}',
+  checkinRowSkipped: '已跳过：{reason}',
 }

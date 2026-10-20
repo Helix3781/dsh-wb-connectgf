@@ -54,9 +54,9 @@ import type { WorkBuddySettingsKey, WorkBuddyTranslate } from './locales.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** WorkBuddy settings-page copy. */
-    'settings.workbuddy': WorkBuddySettingsKey
+    'settings.workbuddy.functy': WorkBuddySettingsKey
     /** WorkBuddy dashboard copy (the sidebar card and its panel). */
-    'panel.workbuddy': keyof typeof PANEL_COPY_EN
+    'panel.workbuddy.functy': keyof typeof PANEL_COPY_EN
   }
 }
 
@@ -185,7 +185,17 @@ export function apply(ctx: ClientContext): void {
   // The locale copy feeds every contribution below through `t`. Its guard
   // exists only so a broken locale service cannot reach the loader; if it
   // degrades, `t` still binds and renders the key names as fallback copy.
-  const namespace = 'settings.workbuddy'
+  // Namespaced by the FORK, not shared with upstream.
+  //
+  // `locale.register` throws when a namespace already holds the same locale
+  // (`locale namespace "settings.workbuddy" already has locale "zh"`), and
+  // upstream dsh-workbuddy-connect registers exactly this name. With both
+  // plugins active the guard below swallowed that throw, `t` stayed unbound,
+  // and every label on the page rendered as its raw key — the settings page
+  // and the dashboard read as "settings.workbuddy.accountHeading" everywhere
+  // (measured 2026-10-20). A fork-specific namespace keeps the two dictionaries
+  // from colliding in one process.
+  const namespace = 'settings.workbuddy.functy'
   guardClientContribution('settings copy', () => {
     ctx.effect(() => ctx.locale.register(namespace, { zh, en }), 'dsh-workbuddy-connect: settings copy')
   })

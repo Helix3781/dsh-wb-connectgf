@@ -6,7 +6,7 @@
 
 **A Functy fork of corrinehu/dsh-workbuddy-connect: dashboard UI, multi-account rotation and credit in the sidebar, bringing WorkBuddy desktop-app models into DeepSeek Harness.**
 
-[![dsh-workbuddy-connect-functy](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.14-4F46E5)](https://github.com/functy23/dsh-workbuddy-connect-functy)
+[![dsh-workbuddy-connect-functy](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.17-4F46E5)](https://github.com/functy23/dsh-workbuddy-connect-functy)
 [![Language](https://img.shields.io/badge/language-TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Top Language](https://img.shields.io/github/languages/top/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/functy23/dsh-workbuddy-connect-functy)
@@ -32,7 +32,7 @@ Both the CN **WorkBuddy** app and the international **WorkBuddy AI** app are sup
 
 Compared with upstream **0.7.8** (2026-10-17). Features both trees share are not listed as ours.
 
-| | Upstream `dsh-workbuddy-connect` 0.7.8 | This tree 0.13.14 |
+| | Upstream `dsh-workbuddy-connect` 0.7.8 | This tree 0.13.17 |
 |---|---|---|
 | UI | two legacy plugin cards in Settings | sidebar credit card + centre dashboard + settings section page (accounts merged into one card per product; balance / used / tokens / reset sit on the line under each name) |
 | Accounts | follows the desktop app's current sign-in | multi-account pool: rotation, QR, token, desktop adopt; a removed account is not swept back in; one card per product instead of one card per account |
@@ -75,7 +75,16 @@ Choose which models appear in the picker:
 
 Prerequisite: the WorkBuddy desktop app is installed and signed in (same for WorkBuddy AI). A mismatched DSH core fails to start.
 
-**This release (`0.13.14`)** targets DSH `0.1.7-alpha.1`, `0.2.0-rc.1`, `0.2.0-rc.2` and `0.2.1-rc.2`. Later prereleases are not covered automatically.
+> **⚠️ This release spans a large amount of change and has NOT been fully tested.** Display problems,
+> and possibly more serious issues, may appear after upgrading. Back up `~/.dsh` before upgrading
+> (especially the `.workbuddy-*.json` stores and `profiles/<profile>/cordis.patch.yml`).
+>
+> Two **breaking changes** ship with it: the Loader entry id is now `llm-workbuddy-functy`, and the
+> locale namespaces are `settings.workbuddy.functy` / `panel.workbuddy.functy`. Installing alongside
+> upstream `dsh-workbuddy-connect` fails to send messages because both claim provider id `workbuddy`;
+> keep only one of the two.
+
+**This release (`0.13.17`)** targets DSH `0.1.7-alpha.1`, `0.2.0-rc.1`, `0.2.0-rc.2` and `0.2.1-rc.2`. Later prereleases are not covered automatically.
 
 > **Do not install npm's `dsh-workbuddy-connect`.** That is the upstream package, a different code line.
 

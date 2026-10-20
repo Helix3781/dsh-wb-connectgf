@@ -147,7 +147,7 @@ const ALL_REGISTRATIONS: RecordedRegistration[] = [
   // Keyed by the settings namespace the Host's configurable-provider directory
   // entry carries, because that is what the Models page dispatches the slot
   // with — a different string here would register a card that renders nowhere.
-  { name: 'settings.models.provider-card', key: 'llm-workbuddy' },
+  { name: 'settings.models.provider-card', key: 'llm-workbuddy-functy' },
   { name: 'conversation.composer.dock', id: 'workbuddy-credit-badge' },
   { name: 'conversation.input.right', id: 'workbuddy-probe' },
 ]
@@ -184,7 +184,7 @@ describe('client contribution isolation', () => {
     expect(h.registered).toEqual([
       { name: 'sidebar.footer.action', id: PANEL_ID },
       { name: 'settings.section', id: 'dsh-workbuddy' },
-      { name: 'settings.models.provider-card', key: 'llm-workbuddy' },
+      { name: 'settings.models.provider-card', key: 'llm-workbuddy-functy' },
       { name: 'conversation.composer.dock', id: 'workbuddy-credit-badge' },
       { name: 'conversation.input.right', id: 'workbuddy-probe' },
     ])
@@ -201,7 +201,7 @@ describe('client contribution isolation', () => {
     expect(h.registered).toEqual([
       { name: 'main', key: PANEL_ID },
       { name: 'sidebar.footer.action', id: PANEL_ID },
-      { name: 'settings.models.provider-card', key: 'llm-workbuddy' },
+      { name: 'settings.models.provider-card', key: 'llm-workbuddy-functy' },
       { name: 'conversation.composer.dock', id: 'workbuddy-credit-badge' },
       { name: 'conversation.input.right', id: 'workbuddy-probe' },
     ])

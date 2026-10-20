@@ -708,6 +708,24 @@ interface WorkBuddyVariant {
   /** Basename of the plugin-owned probe-record file under `$DSH_HOME`. */
   probeFilename: string;
   /**
+   * Where this variant's daily check-in records live.
+   *
+   * Per variant like every other store: the two products' accounts share an id
+   * namespace, so one file would let a CN account's record answer for an
+   * international one with the same uid.
+   */
+  checkinFilename: string;
+  /**
+   * Whether this product HAS a daily check-in at all.
+   *
+   * The CN gateway grants daily credit for one; the international gateway has
+   * no such endpoint — it was retired upstream, and calling the CN path against
+   * it is a guaranteed refusal. A capability flag rather than a branch at each
+   * call site, so the surface, the scheduler and the route all disappear
+   * together instead of one of them forgetting.
+   */
+  checkinSupported: boolean;
+  /**
    * Basename of the plugin-owned request-usage file under `$DSH_HOME`.
    *
    * One per variant like the pools and catalogs: the two products have separate
@@ -1295,6 +1313,23 @@ declare const WORKBUDDY_PREFERENCES: {
    * session has selected, and there is one composer.
    */
   readonly probeControlVisible: {
+    readonly field: z<boolean, boolean, "defined">;
+    readonly stated: (value: boolean) => boolean;
+  };
+  /**
+   * Whether the plugin claims the daily check-in for every pool member.
+   *
+   * Off by default, which is the opposite of the display switches above and for
+   * a different reason: those govern whether a surface is DRAWN, while this one
+   * spends a request against the user's own account without being asked. A
+   * plugin that did that on first launch would be presuming; one that offers it
+   * as a switch costs the user nothing to find.
+   *
+   * The upstream is idempotent ("already checked in" is an answer), so a missed
+   * or repeated day is harmless either way — this switch is about consent, not
+   * about correctness.
+   */
+  readonly checkinAuto: {
     readonly field: z<boolean, boolean, "defined">;
     readonly stated: (value: boolean) => boolean;
   };
@@ -2795,8 +2830,18 @@ declare function processStartTimeMs(pid: number): number | undefined;
 declare function isHeartbeatProcessAlive(heartbeat: WorkBuddyHostHeartbeat): boolean;
 //#endregion
 //#region src/index.d.ts
-/** Stable Cordis plugin name. */
-declare const name = "llm-workbuddy";
+/**
+ * Stable Cordis plugin name.
+ *
+ * **Fork-specific.** Upstream (dsh-workbuddy-connect) exports the same string,
+ * and the Loader keys plugin instances by it: with both installed, the second
+ * one to load collides with the first instead of mounting beside it, and the
+ * browser half's module identity (which the host derives from this name) stops
+ * matching its own rows. The pair was measured on 2026-10-20 — the settings
+ * page rendered raw locale keys and a chat turn could not be sent on a profile
+ * carrying both plugins.
+ */
+declare const name = "dsh-workbuddy-connect-functy";
 /** The model registry required before the provider can register. */
 declare const inject: string[];
 /**
@@ -2834,7 +2879,7 @@ declare const WORKBUDDY_AI_SETTINGS_NS: SettingsNamespace;
  * back from `configEditor.entries()`, so a profile that renamed the row still
  * writes through the right one.
  */
-declare const PROFILE_ENTRY_ID = "llm-workbuddy";
+declare const PROFILE_ENTRY_ID = "llm-workbuddy-functy";
 /**
  * The config fields that are not display preferences.
  *

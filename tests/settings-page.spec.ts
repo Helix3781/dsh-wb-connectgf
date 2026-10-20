@@ -207,6 +207,22 @@ describe('WorkBuddy settings page', () => {
   const trigger = (): HTMLButtonElement =>
     document.querySelector(`#wbp-filter-models-${CN_CARD_VARIANT.id}`) as HTMLButtonElement
 
+  /**
+   * Switch the single model list to one product.
+   *
+   * The page shows ONE product's roster at a time (the two are long and share
+   * most ids), so a test that targets the other product's models must flip the
+   * switch first — exactly as a reader does.
+   */
+  async function showModels(product: string): Promise<void> {
+    const group = document.querySelector(`[aria-label="${t('modelsSwitchLabel')}"]`)
+      ?? document.querySelector('[role="radiogroup"]')
+    const option = [...(group?.querySelectorAll('[role="radio"]') ?? [])]
+      .find(node => (node.textContent ?? '').trim() === product) as HTMLElement | undefined
+    if (option === undefined) throw new Error('no switch option for ' + product)
+    await act(async () => { option.click(); await Promise.resolve() })
+  }
+
   /** Open the picker's menu. */
   async function openPicker(): Promise<void> {
     await act(async () => { trigger().click(); await Promise.resolve() })
@@ -260,10 +276,10 @@ describe('WorkBuddy settings page', () => {
       account({ available: false, cooldown: { untilMs: Date.now() + 7 * 60_000, reason: 'rate', strikes: 1 } }),
     ])
     await mount()
-    // The reason is the head chip and the countdown is the grey meta line: the
-    // unit is chosen by `describeWait`, the wording is local.
-    expect(text()).toContain(t('accountStateLimited'))
-    expect(text()).toContain(t('accountMetaResets', { when: t('waitMinutes', { value: 7 }) }))
+    // The head chip states WHEN the bench lifts — the question the reader has —
+    // and the grey line no longer repeats it: one countdown per row.
+    expect(text()).toContain(t('waitMinutes', { value: 7 }))
+    expect(text()).not.toContain(t('accountMetaResets', { when: t('waitMinutes', { value: 7 }) }))
   })
 
   /**
@@ -275,8 +291,8 @@ describe('WorkBuddy settings page', () => {
       account({ available: false, cooldown: { untilMs: Date.now() + 18 * 3_600_000, reason: 'rate', strikes: 1 } }),
     ])
     await mount()
-    expect(text()).toContain(t('accountStateLimited'))
-    expect(text()).toContain(t('accountMetaResets', { when: t('waitHours', { value: 18 }) }))
+    expect(text()).toContain(t('waitHours', { value: 18 }))
+    expect(text()).not.toContain(t('accountMetaResets', { when: t('waitHours', { value: 18 }) }))
   })
 
   it('reports an expired pasted token, which cannot renew itself', async () => {
@@ -331,6 +347,121 @@ describe('WorkBuddy settings page', () => {
    * The sidebar's display style: a row on this page, written immediately, and
    * read back from the status document so the sidebar redraws with it.
    */
+
+  /**
+   * A preference write must move the control in the same click.
+   *
+   * The slow half of the round trip is the re-read (two status routes, the
+   * international one measured at 1.3s), and that re-read no longer happens: the
+   * page stages the value it just wrote. This pins both halves — the switch
+   * flips before the response lands, and nothing is re-read afterwards.
+   */
+  it('moves a preference switch immediately and does not re-read both products', async () => {
+    byRoute[CN_CARD_VARIANT.statusPath] = {
+      ...signedIn([account()]),
+      sidebarCreditVisible: true,
+    } as unknown as WorkBuddyWebStatus
+    byRoute[AI_CARD_VARIANT.statusPath] = signedIn([])
+    await mount()
+    const readsBefore = request.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method !== 'POST').length
+
+    // Hold the write open so the assertion is about the click, not about timing.
+    let release: (() => void) | undefined
+    const defaultImpl = request.getMockImplementation()!
+    request.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST' && String(url) === CN_CARD_VARIANT.probePath) {
+        await new Promise<void>(resolve => { release = resolve })
+        return { ok: true, json: async () => ({ state: 'updated' }) }
+      }
+      return defaultImpl(url, init)
+    })
+
+    const input = document.querySelector('#wbp-sidebar-visible') as HTMLInputElement
+    act(() => { input.click() })
+    // Still in flight, and the control already shows the new value.
+    expect(input.checked).toBe(false)
+
+    await act(async () => { release?.(); await Promise.resolve(); await Promise.resolve() })
+
+    const readsAfter = request.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method !== 'POST').length
+    expect(readsAfter).toBe(readsBefore)
+    // The sidebar is still told to redraw: it is what the user is looking at.
+    expect(panelRefreshes).toBeGreaterThan(0)
+  })
+
+
+  /**
+   * The check-in section: a plugin-wide switch, then one row per account
+   * stating its record and the last attempt.
+   */
+  it('offers the daily check-in switch and an on-demand button per account', async () => {
+    byRoute[CN_CARD_VARIANT.statusPath] = {
+      ...signedIn([account()]),
+      checkinAuto: false,
+      checkin: { auto: false, rows: [{ accountId: 'uid-a:ent', day: '2026-10-19', atMs: 1_760_000_000_000 }] },
+    } as unknown as WorkBuddyWebStatus
+    byRoute[AI_CARD_VARIANT.statusPath] = signedIn([])
+    await mount()
+
+    expect(text()).toContain(t('checkinHeading'))
+    const toggle = document.querySelector('#wbp-checkin-auto') as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+    // The row states the recorded day rather than a bare "done".
+    expect(text()).toContain(t('checkinRowDay', { day: '2026-10-19' }))
+
+    await act(async () => { toggle.click(); await Promise.resolve() })
+    const call = posted().find(entry => entry.body['action'] === 'set-checkin-auto')
+    expect(call?.url).toBe(CN_CARD_VARIANT.probePath)
+    expect(call?.body['enabled']).toBe(true)
+  })
+
+
+  /**
+   * The international product has no check-in. Its gateway retired the
+   * endpoint, so a row and a button there could only ever fail — the surface
+   * must be absent, not disabled.
+   */
+  it('offers no check-in section for the product that has no check-in', async () => {
+    byRoute[CN_CARD_VARIANT.statusPath] = {
+      ...signedIn([account()]),
+      checkinAuto: true,
+      checkin: { auto: true, rows: [{ accountId: 'uid-a:ent', day: '2026-10-20', atMs: 1 }] },
+    } as unknown as WorkBuddyWebStatus
+    // No `checkin` key at all, which is what the host now sends for this
+    // product.
+    byRoute[AI_CARD_VARIANT.statusPath] = {
+      ...signedIn([account({ id: 'ai:ent', uid: 'ai', name: '国际账号' })]),
+    } as unknown as WorkBuddyWebStatus
+    await mount()
+
+    // One row for the CN account; none for the international one.
+    const runs = buttons().filter(button => button.label === t('checkinRunNow'))
+    expect(runs).toHaveLength(1)
+    expect(text()).toContain(t('checkinRowDay', { day: '2026-10-20' }))
+    expect(text()).toContain('国际账号')
+  })
+
+  it('checks one account in on demand, naming that account', async () => {
+    byRoute[CN_CARD_VARIANT.statusPath] = {
+      ...signedIn([account()]),
+      checkinAuto: true,
+      checkin: { auto: true, rows: [{ accountId: 'uid-a:ent' }] },
+    } as unknown as WorkBuddyWebStatus
+    byRoute[AI_CARD_VARIANT.statusPath] = signedIn([])
+    await mount()
+
+    const run = buttons().find(button => button.label === t('checkinRunNow'))
+    expect(run).toBeDefined()
+    await act(async () => { run?.node.click(); await Promise.resolve(); await Promise.resolve() })
+    const call = posted().find(entry => entry.body['action'] === 'check-in')
+    expect(call?.url).toBe(CN_CARD_VARIANT.probePath)
+    // The account is named: the scheduler checks in every member, so a request
+    // that did not say which one would have to guess.
+    expect(call?.body['account']).toBe('uid-a:ent')
+    // An account with no record yet says so instead of implying a check-in.
+    expect(text()).toContain(t('checkinRowNever'))
+  })
+
   it('offers the sidebar display style and stores the chosen one', async () => {
     byRoute[CN_CARD_VARIANT.statusPath] = {
       ...withModels([model('m1')], { account: 'uid-a:ent', disabled: [] }),
@@ -896,6 +1027,51 @@ describe('WorkBuddy settings page', () => {
     expect(rendered).toContain('1M')
   })
 
+
+  /**
+   * The model lists: one at a time, switched from the heading line.
+   *
+   * Two stacked rosters of twenty shared model ids doubled the page for
+   * information a reader consults one product at a time. The switch sits left of
+   * Refresh and shows exactly one list, so the assertions are: only one roster is
+   * present, the switch names both products, and flipping replaces the roster
+   * rather than adding to it.
+   */
+  it('shows one product model list at a time, switched from the heading', async () => {
+    byRoute[CN_CARD_VARIANT.statusPath] = {
+      ...signedIn([account()]),
+      models: [{ id: 'cn-only', name: 'CN Only Model' }],
+    } as unknown as WorkBuddyWebStatus
+    byRoute[AI_CARD_VARIANT.statusPath] = {
+      ...signedIn([account({ id: 'ai:ent', uid: 'ai', name: '国际账号' })]),
+      models: [{ id: 'ai-only', name: 'AI Only Model' }],
+    } as unknown as WorkBuddyWebStatus
+    await mount()
+
+    // The switch offers both products, and starts on the first one.
+    const group = document.querySelector(`[aria-label=\"${t('modelsSwitchLabel')}\"]`)
+    expect(group).not.toBeNull()
+    const options = [...(group?.querySelectorAll('[role=\"radio\"]') ?? [])].map(node => (node.textContent ?? '').trim())
+    expect(options).toEqual([CN_CARD_VARIANT.appName, AI_CARD_VARIANT.appName])
+
+    // Only the shown product's roster is laid out.
+    expect(text()).toContain('CN Only Model')
+    expect(text()).not.toContain('AI Only Model')
+
+    await showModels(AI_CARD_VARIANT.appName)
+    expect(text()).toContain('AI Only Model')
+    // Replaced, not appended: a second roster would defeat the whole point.
+    expect(text()).not.toContain('CN Only Model')
+  })
+
+  it('keeps the switch working when one product has no models at all', async () => {
+    byRoute[AI_CARD_VARIANT.statusPath] = signedIn([])
+    await mount()
+    await showModels(AI_CARD_VARIANT.appName)
+    // The empty state, rather than a blank panel or the other product's rows.
+    expect(text()).toContain(t('modelsEmpty'))
+  })
+
   it('offers a context switch only where the model declares a choice', async () => {
     byRoute[CN_CARD_VARIANT.statusPath] = {
       ...signedIn([account()]),
@@ -907,7 +1083,10 @@ describe('WorkBuddy settings page', () => {
       ],
     } as unknown as WorkBuddyWebStatus
     await mount()
+    // The product switch is itself a radiogroup, so the model rows are the groups
+    // whose accessible name is a model rather than the switch's label.
     const groups = [...document.querySelectorAll('[role="radiogroup"]')]
+      .filter(node => node.getAttribute('aria-label') !== t('modelsSwitchLabel'))
     // Only the model with something to choose gets a radiogroup.
     expect(groups).toHaveLength(1)
     expect(groups[0]?.getAttribute('aria-label')).toContain('GPT-5.6-Sol')
@@ -924,7 +1103,12 @@ describe('WorkBuddy settings page', () => {
       ],
     } as unknown as WorkBuddyWebStatus
     await mount()
+    // The international roster is behind the switch: the page opens on the CN
+    // list, so the target rows do not exist until the switch is flipped.
+    await showModels(AI_CARD_VARIANT.appName)
     const radios = [...document.querySelectorAll('[role="radio"]')]
+      .filter(node => (node.textContent ?? '').trim() !== CN_CARD_VARIANT.appName
+        && (node.textContent ?? '').trim() !== AI_CARD_VARIANT.appName)
     await act(async () => { (radios[0] as HTMLElement | undefined)?.click(); await Promise.resolve() })
     const call = posted().find(entry => entry.body['action'] === 'context')
     expect(call).toBeDefined()

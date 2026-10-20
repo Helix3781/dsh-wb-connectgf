@@ -64,21 +64,37 @@ describe('account state', () => {
     expect(state).toEqual({ tone: 'ok', text: '', servable: true })
   })
 
-  it('names the bench reason without repeating the countdown', () => {
+  it('states WHEN a bench lifts, not the word for it', () => {
     const state = accountSummaryState(
       account({ available: false, cooldown: { untilMs: NOW + 7 * 60_000, reason: 'rate', strikes: 1 } }),
       NOW,
       copy,
     )
     expect(state.tone).toBe('warn')
-    expect(state.text).toBe('Rate limited')
+    // The wait itself, so the reader learns when the account is back rather
+    // than being told the dot's colour in words.
+    expect(state.text).toBe('7 minute')
     expect(state.servable).toBe(false)
-    // The countdown lives in the meta line only.
+    // ...and only there: repeating it on the meta line printed one countdown
+    // twice in one row.
     expect(accountSummaryMeta(
       account({ available: false, cooldown: { untilMs: NOW + 7 * 60_000, reason: 'rate', strikes: 1 } }),
       NOW,
       copy,
-    )).toContain('resets in 7 minute')
+    )).not.toContain('minute')
+  })
+
+  it('keeps the reason for a credit bench, with the wait beside it', () => {
+    const account_ = account({ available: false, cooldown: { untilMs: NOW + 2 * 3_600_000, reason: 'credit', strikes: 1 } })
+    // "out of quota" decides whether the user waits or adds an account; the
+    // wait alone would leave that question open.
+    expect(accountSummaryState(account_, NOW, copy).text).toBe('Out of quota · 2 hour')
+    expect(accountSummaryMeta(account_, NOW, copy)).not.toContain('hour')
+  })
+
+  it('still names a session bench without a countdown', () => {
+    const account_ = account({ available: false, cooldown: { untilMs: NOW + 60_000, reason: 'session', strikes: 1 } })
+    expect(accountSummaryState(account_, NOW, copy).text).toBe('Sign-in expired')
   })
 
   it('reads an expired, non-renewable token as a failure the user must act on', () => {

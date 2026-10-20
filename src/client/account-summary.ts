@@ -81,9 +81,15 @@ export function accountSummaryState(
   if (account.sessionDead === true) return { tone: 'error', text: copy.sessionDead, servable: false }
   const cooldown = account.cooldown
   if (cooldown !== undefined && cooldown.untilMs > now) {
-    const text = cooldown.reason === 'credit'
-      ? copy.exhausted
-      : cooldown.reason === 'session' ? copy.sessionDead : copy.limited
+    // A live bench states WHEN it lifts, not the fact that it is one: "4 小时"
+    // answers the question the reader has ("when can I use this again"), while
+    // "rate limited" only restates the dot's colour. The wait is the only place
+    // it appears now — the meta line below deliberately stopped repeating it.
+    const wait = waitText(cooldown.untilMs, now, copy)
+    if (cooldown.reason === 'session') return { tone: 'warn', text: copy.sessionDead, servable: false }
+    // Credit keeps its own word: the wait is the same shape, but "out of quota"
+    // is the fact that decides whether the user waits or adds an account.
+    const text = cooldown.reason === 'credit' ? `${copy.exhausted} · ${wait}` : wait
     return { tone: 'warn', text, servable: false }
   }
   // An expired pasted token is the one state the user must act on, and it is
@@ -130,12 +136,11 @@ export function accountSummaryMeta(account: WorkBuddyWebAccount, now: number, co
     }
   }
 
-  // A bench outranks the cycle reset: while an account is set aside, the wait
-  // that matters is the one that returns it.
-  const cooldown = account.cooldown
-  if (cooldown !== undefined && cooldown.untilMs > now) {
-    parts.push(copy.resets({ when: waitText(cooldown.untilMs, now, copy) }))
-  } else if (account.creditsResetAtMs !== undefined && account.creditsResetAtMs > now) {
+  // The bench wait lives in the head chip now (see {@link accountSummaryState}),
+  // so the line carries only the ALLOWANCE reset — a different fact that
+  // survives the bench being lifted.
+  if (account.creditsResetAtMs !== undefined && account.creditsResetAtMs > now
+    && (account.cooldown === undefined || account.cooldown.untilMs <= now)) {
     parts.push(copy.resets({ when: waitText(account.creditsResetAtMs, now, copy) }))
   } else if (account.expiresAtMs > 0 && account.expiresAtMs > now && account.renewable !== true) {
     // A pasted token cannot renew itself, so its expiry is the one date the

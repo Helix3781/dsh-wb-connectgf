@@ -285,9 +285,21 @@ export function WorkBuddyFooterEntry(props: WorkBuddyFooterEntryProps): ReactNod
 
   useEffectOnce(startAutoRefresh)
 
-  // Switched off in the settings. Returning after the hooks (never before them)
-  // is what keeps the mount order stable across the flip, and what keeps the
-  // background sweep running for the surfaces that remain on screen.
+  // Two reasons to draw nothing, and they are different:
+  //
+  // - the user switched the card off, or
+  // - nothing has been read yet, so the switch's value is not knowable.
+  //
+  // The second one is what stops the flash: every preference falls back to its
+  // default until an answer arrives, and the default is "present", so a card
+  // the user had turned off used to appear for one frame and then vanish.
+  // Waiting for the first sweep costs nothing — the card has nothing to say
+  // before then either — and the poll below still runs, because it is started
+  // from the hooks above and this return is only about WHAT is drawn.
+  //
+  // Returning after the hooks (never before them) is what keeps the mount order
+  // stable across the flip and keeps the sweep alive for the surfaces that stay.
+  if (!view.preferencesSettled) return null
   if (!view.creditVisible) return null
 
   const label = view.footTitle === '' ? t('footerLabel') : view.footTitle

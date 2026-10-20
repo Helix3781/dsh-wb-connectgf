@@ -93,6 +93,21 @@ export interface WorkBuddyProbeRouteOptions {
    */
   setProbeControlVisible?: (visible: boolean) => Promise<{ state: string; reason?: string }>
   /**
+   * Claim one account's daily check-in now.
+   *
+   * A write against the upstream that spends nothing but a round trip, and the
+   * only way to check in on demand: the scheduler does it once a day, and a user
+   * who just added an account should not have to wait for tomorrow.
+   */
+  checkIn?: (accountId: string) => Promise<{ state: string; reason?: string }>
+  /**
+   * Persist whether the plugin claims check-ins on its own.
+   *
+   * Plugin-wide for the same reason the sidebar switches are: there is one
+   * clock and one plugin, so there is one answer.
+   */
+  setCheckinAuto?: (enabled: boolean) => Promise<{ state: string; reason?: string }>
+  /**
    * Open one absolute http(s) link in the user's own browser.
    *
    * The sign-in routes hand the user a page on the provider's site, and only
@@ -221,6 +236,19 @@ function parseAction(text: string): WorkBuddyProbeAction | undefined {
     if (typeof enabled !== 'boolean') return undefined
     return { action, enabled }
   }
+  if (action === 'check-in') {
+    const account = wrapped['account']
+    // The account is named rather than inferred: the scheduler checks in every
+    // pool member, and a manual request that did not say which one would have
+    // to guess — which is how the wrong account ends up with the credit.
+    if (typeof account !== 'string' || account === '') return undefined
+    return { action: 'check-in', account }
+  }
+  if (action === 'set-checkin-auto') {
+    const enabled = wrapped['enabled']
+    if (typeof enabled !== 'boolean') return undefined
+    return { action: 'set-checkin-auto', enabled }
+  }
   if (action === 'set-model-allowlist') {
     const account = wrapped['account']
     const allowlist = wrapped['allowlist']
@@ -338,6 +366,22 @@ export function workBuddyProbeHandler(
           return
         }
         json(res, 200, await deps.setProbeControlVisible(action.enabled === true))
+        return
+      }
+      if (action.action === 'check-in') {
+        if (deps.checkIn === undefined) {
+          json(res, 404, { error: 'checkin-not-supported' })
+          return
+        }
+        json(res, 200, await deps.checkIn(action.account as string))
+        return
+      }
+      if (action.action === 'set-checkin-auto') {
+        if (deps.setCheckinAuto === undefined) {
+          json(res, 404, { error: 'checkin-setting-not-supported' })
+          return
+        }
+        json(res, 200, await deps.setCheckinAuto(action.enabled === true))
         return
       }
       if (action.action === 'set-model-visibility') {
