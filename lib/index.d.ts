@@ -442,13 +442,17 @@ declare function originForRegion(region: WorkBuddyRegion): string;
  * Normalize an OpenAI chat-completions body for the WorkBuddy upstream:
  * force `stream: true` (the upstream rejects non-streaming), flatten
  * `tool_choice` (the upstream's field is a string; object forms return 400),
- * and rewrite `developer` messages as `system`.
+ * rewrite `developer` messages as `system`, and replace the harness identity
+ * opener with the one the shipped client writes.
  *
  * The `developer` rewrite is load-bearing: pi-ai emits the system prompt as
  * `role: "developer"` (the OpenAI convention it adopted), but the WorkBuddy
  * upstream rejects that role with HTTP 400 code 11128 ("Illegal API
  * invocation from an unapproved channel"). Rewriting to `system` is the
  * compatible spelling the upstream accepts.
+ *
+ * The opener rewrite is the same class of fix for a newer check; see
+ * {@link normalizeHarnessOpener}.
  */
 declare function prepareChatBody(source: string): string;
 /** Provenance of one successful catalog fetch, surfaced by the status card. */

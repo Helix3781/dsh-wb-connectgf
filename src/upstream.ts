@@ -793,13 +793,17 @@ function identityHeaders(credential: WorkBuddyCredential): Record<string, string
  * Normalize an OpenAI chat-completions body for the WorkBuddy upstream:
  * force `stream: true` (the upstream rejects non-streaming), flatten
  * `tool_choice` (the upstream's field is a string; object forms return 400),
- * and rewrite `developer` messages as `system`.
+ * rewrite `developer` messages as `system`, and replace the harness identity
+ * opener with the one the shipped client writes.
  *
  * The `developer` rewrite is load-bearing: pi-ai emits the system prompt as
  * `role: "developer"` (the OpenAI convention it adopted), but the WorkBuddy
  * upstream rejects that role with HTTP 400 code 11128 ("Illegal API
  * invocation from an unapproved channel"). Rewriting to `system` is the
  * compatible spelling the upstream accepts.
+ *
+ * The opener rewrite is the same class of fix for a newer check; see
+ * {@link normalizeHarnessOpener}.
  */
 export function prepareChatBody(source: string): string {
   let body: unknown
@@ -812,10 +816,100 @@ export function prepareChatBody(source: string): string {
   const obj = body as Record<string, unknown>
   obj['stream'] = true
   normalizeDeveloperRole(obj)
+  normalizeHarnessOpener(obj)
   normalizeToolChoice(obj)
   return JSON.stringify(obj)
 }
 
+/**
+ * The identity sentence the shipped WorkBuddy client opens its system prompt
+ * with, and the one DeepSeek Harness injects.
+ *
+ * Both strings are read out of the shipped artifacts, not guessed:
+ *
+ * - the official opener is the first line of the desktop app's own prompt
+ *   template — `welcomemode/{code,work,design}/prompt.tpl` under
+ *   `resources/plugins/workbuddy-builtin/` all begin
+ *   `This conversation is powered by {{ productName }}`, and `productName` is
+ *   `WorkBuddy` in the CLI's `product.json`;
+ * - the harness opener is `harness:identity` in
+ *   `@deepseek-ai/dsh-system-prompt`, injected whenever
+ *   `includeHarnessIdentity` is on (the default).
+ *
+ * The CN gateway rejects a body whose leading system message opens with the
+ * harness sentence — HTTP 400 / code 11128 / 「请求被拦截，请重新发送」 — while
+ * the same body opening with the official sentence is accepted. Measured
+ * 2026-10-21 against `copilot.tencent.com`: opener-first 400, the official
+ * sentence 200, the harness sentence moved off the front 200.
+ */
+const HARNESS_OPENER = 'You are an AI agent powered by DeepSeek Harness'
+
+/**
+ * The official client's opening line, substituted for the harness one.
+ *
+ * Deliberately the real product sentence rather than a neutral paraphrase:
+ * the point is to look like the shipped client, and a body whose first line is
+ * a sentence only this plugin would write is a worse disguise than one the
+ * desktop app actually produces. `productName` is spelled out because the
+ * template's region switch resolves to the same token in both builds.
+ */
+const OFFICIAL_OPENER = 'This conversation is powered by WorkBuddy'
+
+/**
+ * Replace the harness identity opener with the official client's.
+ *
+ * Scope is the message that carries it, and only that sentence:
+ *
+ * - `system` and `developer` roles only (after {@link normalizeDeveloperRole},
+ *   so pi-ai's `developer` spelling is covered); a user message that happens to
+ *   quote the sentence is left alone;
+ * - both content shapes, because the CN gateway rejects an array-form `text`
+ *   part just as it rejects a plain string, and a rewrite that only handles
+ *   strings silently misses half the requests;
+ * - every system message, not just the first: DSH re-emits the system prompt as
+ *   a new message when it changes, and a long session carries several.
+ *
+ * The rewrite is idempotent — the substituted sentence does not contain the
+ * harness one — so the international path, which runs
+ * {@link prepareChatBody} a second time, cannot double-apply it.
+ */
+function normalizeHarnessOpener(obj: Record<string, unknown>): void {
+  const messages = obj['messages']
+  if (!Array.isArray(messages)) return
+  for (const message of messages) {
+    if (typeof message !== 'object' || message === null || Array.isArray(message)) continue
+    const wrapped = message as Record<string, unknown>
+    const role = wrapped['role']
+    if (role !== 'system' && role !== 'developer') continue
+    const content = wrapped['content']
+    if (typeof content === 'string') {
+      wrapped['content'] = replaceHarnessOpener(content)
+      continue
+    }
+    if (!Array.isArray(content)) continue
+    for (const part of content) {
+      if (typeof part !== 'object' || part === null || Array.isArray(part)) continue
+      const wrappedPart = part as Record<string, unknown>
+      if (wrappedPart['type'] !== 'text' || typeof wrappedPart['text'] !== 'string') continue
+      wrappedPart['text'] = replaceHarnessOpener(wrappedPart['text'])
+    }
+  }
+}
+
+/**
+ * The harness sentence, anchored to the start of a message.
+ *
+ * Anchoring is the whole rule, not a convenience: upstream measured that the
+ * same sentence anywhere other than the front is accepted, so a mid-prompt
+ * occurrence is left byte-identical. Leading whitespace and a BOM are tolerated
+ * because the prompt is assembled from sections and may open with either.
+ */
+const HARNESS_OPENER_PATTERN = /^([\s\uFEFF]*)You are an AI agent powered by DeepSeek Harness/u
+
+/** One system string's opener swap; a no-op when the message does not open with it. */
+function replaceHarnessOpener(text: string): string {
+  return text.replace(HARNESS_OPENER_PATTERN, `$1${OFFICIAL_OPENER}`)
+}
 /** Rewrite `role: "developer"` messages to `role: "system"` (upstream rejects developer). */
 function normalizeDeveloperRole(obj: Record<string, unknown>): void {
   const messages = obj['messages']

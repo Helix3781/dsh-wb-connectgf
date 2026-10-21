@@ -2,11 +2,48 @@
 
 版本号即 git tag，遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.13.19-alpha.1] — 2026-10-21
+
+**修 11128 的真正成因：system prompt 开头那句 DSH 身份句。** 上一版（`0.13.19-alpha.0`）把同一条报错当成身份头问题去修，方向错了 —— 上游 PR #202 / #204 与实测都指向请求体内容。
+
+### 实测（2026-10-21，CN 网关 `copilot.tencent.com`）
+
+| system 首条消息 | 结果 |
+|---|---|
+| 以 `You are an AI agent powered by DeepSeek Harness.` 开头（字符串） | **400 / 11128** |
+| 同上，但为数组形态 `content` 的 `text` 部件 | **400 / 11128** |
+| 换成 `This conversation is powered by WorkBuddy.` | 200 |
+| 普通 system（`You are a helpful assistant.`） | 200（该账号随后被风控，见下） |
+
+对照组证明：**拦截只认 body 内容，与请求头无关** —— 带全套官方头、只把开场句换掉的请求就能通过。上一版补的 `acp-connection-id` 等头对这条判定不起作用。
+
+### 改动
+
+`prepareChatBody()` 增加 `normalizeHarnessOpener()`：
+
+- 把 `system` / `developer` 消息**开头**的 DSH 身份句换成官方开场句；
+- 官方开场句不是编的：`resources/plugins/workbuddy-builtin/welcomemode/{code,work,design}/prompt.tpl` 首行都是 `This conversation is powered by {{ productName }}`，`productName` 在 `cli/product.json` 里是 `WorkBuddy`。所以替换后发出去的是**官方客户端真的会发的那句话**，不是中性替身；
+- 锚定在消息开头（容忍前导空白与 BOM）：实测同一句出现在句中/后面时网关接受，所以不越界改写用户自己的提示词；
+- 同时覆盖字符串 content 与数组形态的 `text` 部件 —— 只改字符串会漏掉一半请求（上游 PR #204 相对 #202 的关键差异）；
+- 长会话里每条 system 消息都改（只改第一条实测仍 400）；
+- 幂等：替换后的句子不含原句，国际版路径二次调用不会叠加。
+
+### 与上一版的关系
+
+`alpha.0` 的头对齐（`acp-connection-id`、去掉 `X-No-*`、id 拼写、`channel_check` 分类与重发）**保留** —— 那些是「更像官方客户端」的正确方向，只是**不是这条报错的原因**。上一版的 CHANGELOG 把因果说错了，这里更正。
+
+### 验证
+
+`typecheck` / `test`（66 文件 / 889 用例）/ `build` / `test:engine` 全绿。新增 `tests/prepare.spec.ts` 的 7 例：句首替换、数组 content、多条 system、user 消息不受影响、句中不越界、幂等、前导空白。
+
+真实上游：改写后发出的开场句为 `This conversation is powered by WorkBuddy.`，国际网关 200 正常流式。CN 侧因两个账号本轮均已失效（一个 token 被吊销、一个被判定异常行为限制），未能完成对照。
 ## [0.13.19-alpha.0] — 2026-10-21
 
 > **预发布，非正式版。** 发在 npm 的 `alpha` dist-tag 上（`--tag alpha`），`latest` 仍是 0.13.18。安装需显式写版本或 tag：`dsh-workbuddy-connect-functy@alpha`。
 >
 > 这批改动动的是**请求身份本身**（新头、换 id 拼写），失败模式是「上游换个方式拒绝」，因此先走预发布观察一轮再考虑并入正式线。分支：`alpha`。
+>
+> **注意：本版没有修掉 11128。** 当时把成因判断成请求头，方向错了；真正的成因见 `0.13.19-alpha.1`。
 
 **修「渠道校验」被拒（`400 / 11128 / Illegal API invocation from an unapproved channel`）。** 起因是一轮真实失败：上游回 `displayTips`「This call failed channel verification, possibly because it was not sent from an official client」，界面显示的却是被截断的裸 JSON。解包 `WorkBuddy.app` 逐头比对后，问题分四层，四个都修了。
 

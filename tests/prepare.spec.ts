@@ -73,6 +73,100 @@ describe('prepareChatBody', () => {
   })
 })
 
+/**
+ * The CN gateway's third-party-client check (issue #201 upstream).
+ *
+ * The measured rule: a body whose leading system message opens with the
+ * harness identity sentence is refused with 400 / 11128; the same body opening
+ * with the sentence the shipped client writes is accepted. These tests pin the
+ * rewrite's scope, because an over-broad one would silently edit user prompts.
+ */
+describe('prepareChatBody harness-opener rewrite', () => {
+  const HARNESS = 'You are an AI agent powered by DeepSeek Harness.'
+  // The sentence as the prompt actually carries it: with the template's full stop.
+  const HARNESS_SENTENCE = HARNESS
+  const OFFICIAL = 'This conversation is powered by WorkBuddy'
+
+  const messagesOf = (raw: string): { role: string; content: unknown }[] =>
+    (JSON.parse(prepareChatBody(raw)) as { messages: { role: string; content: unknown }[] }).messages
+
+  it('replaces the harness identity sentence with the official opener', () => {
+    const messages = messagesOf(JSON.stringify({
+      model: 'hy3',
+      messages: [{ role: 'system', content: `${HARNESS_SENTENCE}\n\nYou are a coding agent.` }, { role: 'user', content: 'hi' }],
+    }))
+    // Only the identity sentence is swapped; the template's full stop and the
+    // rest of the prompt stay byte-identical.
+    expect(messages[0]?.content).toBe(`${OFFICIAL}.\n\nYou are a coding agent.`)
+  })
+
+  it('tolerates leading whitespace before the sentence', () => {
+    const messages = messagesOf(JSON.stringify({
+      model: 'hy3',
+      messages: [{ role: 'system', content: `  ${HARNESS_SENTENCE}` }],
+    }))
+    expect(messages[0]?.content).toBe(`  ${OFFICIAL}.`)
+  })
+
+  it('rewrites an array-form system message too', () => {
+    // A rewrite that only handles string content misses these requests, and the
+    // gateway refuses them exactly the same way.
+    const messages = messagesOf(JSON.stringify({
+      model: 'hy3',
+      messages: [
+        { role: 'system', content: [{ type: 'text', text: HARNESS }] },
+        { role: 'user', content: 'hi' },
+      ],
+    }))
+    expect((messages[0]?.content as { text: string }[])[0]?.text).toBe(`${OFFICIAL}.`)
+  })
+
+  it('rewrites every system message, not only the first', () => {
+    // DSH re-emits the system prompt when it changes, so a long session carries
+    // several; upstream measured that fixing only the first still fails.
+    const messages = messagesOf(JSON.stringify({
+      model: 'hy3',
+      messages: [
+        { role: 'system', content: HARNESS_SENTENCE },
+        { role: 'user', content: 'hi' },
+        { role: 'system', content: `${HARNESS} again` },
+      ],
+    }))
+    expect(messages[0]?.content).toBe(`${OFFICIAL}.`)
+    expect(messages[2]?.content).toBe(`${OFFICIAL}. again`)
+  })
+
+  it('leaves a user message that quotes the sentence alone', () => {
+    const messages = messagesOf(JSON.stringify({
+      model: 'hy3',
+      messages: [{ role: 'user', content: `${HARNESS} what does this mean?` }],
+    }))
+    expect(messages[0]?.content).toBe(`${HARNESS} what does this mean?`)
+  })
+
+  it('leaves a system prompt that merely mentions the sentence in the middle alone', () => {
+    // Anchoring is the measured rule: the same sentence anywhere but the front
+    // is accepted by the gateway, so rewriting it would be an unnecessary edit
+    // to a prompt the user wrote.
+    const messages = messagesOf(JSON.stringify({
+      model: 'hy3',
+      messages: [{ role: 'system', content: `Custom persona. ${HARNESS}` }],
+    }))
+    expect(messages[0]?.content).toBe(`Custom persona. ${HARNESS}`)
+  })
+
+  it('is idempotent, so the international second pass cannot double-apply', () => {
+    const once = prepareChatBody(JSON.stringify({ model: 'm', messages: [{ role: 'system', content: HARNESS_SENTENCE }] }))
+    const twice = prepareChatBody(once)
+    expect(JSON.parse(twice).messages[0].content).toBe(`${OFFICIAL}.`)
+  })
+
+  it('leaves a body with no system message untouched apart from stream', () => {
+    const messages = messagesOf(JSON.stringify({ model: 'm', messages: [{ role: 'user', content: HARNESS }] }))
+    expect(messages[0]?.content).toBe(HARNESS)
+  })
+})
+
 describe('classifyUpstreamError', () => {
   it('classifies 402 as hard credit', () => {
     expect(classifyUpstreamError(402, '')).toBe('hard_credit')
