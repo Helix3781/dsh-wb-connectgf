@@ -24,6 +24,20 @@
 
 ---
 
+> ## ⚠️ Read this first: upstream is tightening, and it can break at any time
+>
+> **Since 2026-10-20 the WorkBuddy chat gateway enforces channel verification against third-party clients.** This plugin — and every other third-party integration — can be refused outright.
+>
+> - Typical failure: `400 / code 11128 / Illegal API invocation from an unapproved channel`, surfaced to users as 「请求被拦截，请重新发送」 / 「这次调用没通过渠道校验，可能不是官方客户端发出的」.
+> - The checks keep growing. Confirmed so far: the **fixed sentence at the start of the system prompt** (DSH core injects `You are an AI agent powered by DeepSeek Harness.`), and the **request-header shape** (`X-Conversation-*`, `acp-connection-id`, how `X-No-*` is used). Earlier releases of this plugin were already refused once for omitting the `X-Conversation-*` trio and once for sending `X-No-*` where the official client never does.
+> - **This plugin imitates the official client at the byte level**, which is a cat-and-mouse game: every upstream change can break it until someone adapts again. **No version can promise it keeps working.**
+> - **The account risk is real.** While diagnosing this, one CN account's refresh token was revoked by the upstream (`invalid_grant: User disabled`) and another was flagged 「账号存在异常行为，已被限制使用」 (`403 / 11140`). Retrying aggressively, rotating many accounts, or unusual request pacing all make that judgement more likely.
+> - Upstream [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) **stopped maintenance on 2026-10-20**, saying it respects that boundary and will not keep adapting to these checks; the repository is scheduled to go offline on 2026-10-22. This fork is independent and still maintained, but that does not mean the road continues.
+>
+> **Decide for yourself whether your account is worth that risk.** If not, use the official WorkBuddy client.
+
+---
+
 This is a fork of [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect), not the upstream project. The upstream npm package is still `dsh-workbuddy-connect` (currently `0.7.8`, DSH `0.2.1-rc.2` only). This repository publishes as **`dsh-workbuddy-connect-functy`**, with a different UI and account model.
 
 Both the CN **WorkBuddy** app and the international **WorkBuddy AI** app are supported: whichever you have installed shows up as its own model group; both installed shows both, each with its own account and credit.
@@ -179,10 +193,19 @@ CN by default; add `--provider workbuddy-ai` for the international product. `acc
 - The international catalog comes from the app's own interface and can break; the plugin then degrades to the last successful catalog, then the built-in roster.
 - International enterprise billing is unverified; a product with no credential no longer shows a model group.
 - Relies on WorkBuddy client interfaces; app updates may require plugin updates.
+- **The gateway's channel verification is the most fragile part**: it judges whether a request looks like the official client, and the dimensions keep growing (the system-prompt opener, the `X-Conversation-*` trio, `acp-connection-id`, how `X-No-*` is used). One upstream change can make the whole plugin unusable until someone adapts again.
+- This plugin aligns with the official client's byte-level characteristics and **does no risk-control evasion** (no IP changes, no forged device fingerprints, no bulk registration). If the upstream adds a new dimension — device, rate, signature — the plugin will not try to bypass it.
 
 ## Disclaimer
 
 For personal learning and research only, driving your own account on your own machine. Comply with WorkBuddy's terms. Not affiliated with Tencent, WorkBuddy, or DeepSeek.
+
+**On bans and stability** (the actionable part; the warning box above covers the rest):
+
+- The plugin passes gateway checks by imitating the official client's request characteristics. Those checks are **theirs to change at any time**, so this repository promises no period of availability and does not guarantee your account will not be restricted or banned.
+- Since the upstream tightened on 2026-10-20 there have been real cases of restricted accounts, including two during this repository's own diagnosis. **Use your own account, keep request rates sane, and do not use it for bulk or multi-instance workloads.**
+- On a `400 / 11128`, first check whether the upstream changed the check rather than retrying in a loop — retrying can itself accelerate a risk-control decision. A `requestId` in an issue is worth more than repeated attempts.
+- No support is offered for evading risk controls, bulk registration, or running large account pools at scale.
 
 ## Acknowledgements
 

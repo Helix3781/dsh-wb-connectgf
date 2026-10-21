@@ -2,6 +2,93 @@
 
 版本号即 git tag，遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.13.19-alpha.1] — 2026-10-21
+
+**修 11128 的真正成因：system prompt 开头那句 DSH 身份句。** 上一版（`0.13.19-alpha.0`）把同一条报错当成身份头问题去修，方向错了 —— 上游 PR #202 / #204 与实测都指向请求体内容。
+
+### 实测（2026-10-21，CN 网关 `copilot.tencent.com`）
+
+| system 首条消息 | 结果 |
+|---|---|
+| 以 `You are an AI agent powered by DeepSeek Harness.` 开头（字符串） | **400 / 11128** |
+| 同上，但为数组形态 `content` 的 `text` 部件 | **400 / 11128** |
+| 换成 `This conversation is powered by WorkBuddy.` | 200 |
+| 普通 system（`You are a helpful assistant.`） | 200（该账号随后被风控，见下） |
+
+对照组证明：**拦截只认 body 内容，与请求头无关** —— 带全套官方头、只把开场句换掉的请求就能通过。上一版补的 `acp-connection-id` 等头对这条判定不起作用。
+
+### 改动
+
+`prepareChatBody()` 增加 `normalizeHarnessOpener()`：
+
+- 把 `system` / `developer` 消息**开头**的 DSH 身份句换成官方开场句；
+- 官方开场句不是编的：`resources/plugins/workbuddy-builtin/welcomemode/{code,work,design}/prompt.tpl` 首行都是 `This conversation is powered by {{ productName }}`，`productName` 在 `cli/product.json` 里是 `WorkBuddy`。所以替换后发出去的是**官方客户端真的会发的那句话**，不是中性替身；
+- 锚定在消息开头（容忍前导空白与 BOM）：实测同一句出现在句中/后面时网关接受，所以不越界改写用户自己的提示词；
+- 同时覆盖字符串 content 与数组形态的 `text` 部件 —— 只改字符串会漏掉一半请求（上游 PR #204 相对 #202 的关键差异）；
+- 长会话里每条 system 消息都改（只改第一条实测仍 400）；
+- 幂等：替换后的句子不含原句，国际版路径二次调用不会叠加。
+
+### 与上一版的关系
+
+`alpha.0` 的头对齐（`acp-connection-id`、去掉 `X-No-*`、id 拼写、`channel_check` 分类与重发）**保留** —— 那些是「更像官方客户端」的正确方向，只是**不是这条报错的原因**。上一版的 CHANGELOG 把因果说错了，这里更正。
+
+### 验证
+
+`typecheck` / `test`（66 文件 / 889 用例）/ `build` / `test:engine` 全绿。新增 `tests/prepare.spec.ts` 的 7 例：句首替换、数组 content、多条 system、user 消息不受影响、句中不越界、幂等、前导空白。
+
+真实上游：改写后发出的开场句为 `This conversation is powered by WorkBuddy.`，国际网关 200 正常流式。CN 侧因两个账号本轮均已失效（一个 token 被吊销、一个被判定异常行为限制），未能完成对照。
+## [0.13.19-alpha.0] — 2026-10-21
+
+> **预发布，非正式版。** 发在 npm 的 `alpha` dist-tag 上（`--tag alpha`），`latest` 仍是 0.13.18。安装需显式写版本或 tag：`dsh-workbuddy-connect-functy@alpha`。
+>
+> 这批改动动的是**请求身份本身**（新头、换 id 拼写），失败模式是「上游换个方式拒绝」，因此先走预发布观察一轮再考虑并入正式线。分支：`alpha`。
+>
+> **注意：本版没有修掉 11128。** 当时把成因判断成请求头，方向错了；真正的成因见 `0.13.19-alpha.1`。
+
+**修「渠道校验」被拒（`400 / 11128 / Illegal API invocation from an unapproved channel`）。** 起因是一轮真实失败：上游回 `displayTips`「This call failed channel verification, possibly because it was not sent from an official client」，界面显示的却是被截断的裸 JSON。解包 `WorkBuddy.app` 逐头比对后，问题分四层，四个都修了。
+
+### 1. 缺 `acp-connection-id`（最像硬伤的一项）
+
+官方网关代理 `main/server.js` 的 `applyGatewayHeaders` 对**每一次** chat 请求都设 `acp-connection-id`，值来自会话账本（`VlmSessionLedger` 的 per-session metadata）。插件从来没发过这个头 —— 是唯一一个「官方必发、插件完全缺席」的头，而失败的判定词恰好是 channel verification。
+
+现在按会话生成并稳定：`ChatChannel.acpConnectionId`，一次会话不换，被拒后换新的。**诚实记一句**：官方那个值是 `/connect` 握手换来的服务端签发值，这里是本地生成的声明值 —— 比缺席强，但要做到字面一致得先做 ACP 握手，那是传输层改动，不在本版。
+
+### 2. 多发了官方从不发的 `X-No-*` 族
+
+`X-No-User-Id` / `X-No-Enterprise-Id` / `X-No-Department-Info` 在官方包里**只出现在 `/v2/auth/state`**，且值是字符串 `"true"`。插件原来在 chat 上用 `"1"`，而本机两个 CN 账号都没有 `enterpriseId`，于是**每次 chat 都带 `X-No-Enterprise-Id: 1`**。缺一个头是信息不全，多一个官方不会发的头是主动说假话。现在没有值就不发。
+
+### 3. 三个 id 的拼写与官方不一致
+
+官方不是一套 UUID 用到底（`cli/dist/codebuddy-lite-wb.mjs`）：
+
+| id | 官方 | 插件（旧） | 插件（现在） |
+|---|---|---|---|
+| `X-Conversation-ID` | `crypto.randomUUID()`，带横线 | 带横线 ✅ | 带横线 |
+| `X-Conversation-Request-ID` | `.replace(/-/g,'')`，32 位 hex | 带横线 ❌ | 32 位 hex |
+| `X-Conversation-Message-ID` | **UUIDv7** `.replace(/-/g,'')` | 随机 UUID 带横线 ❌ | UUIDv7 32 位 hex |
+| `X-Root-Request-ID` | **仅在** fork/subagent 时发 | 每轮无条件发 ❌ | 不发 |
+
+`uuidv7Hex()` 是新的：前 48 位是毫秒时间戳，所以 id 按到达时间可排序 —— 这正是随机 UUID 模仿不了、而按会话分桶的网关看得见的东西。
+
+### 4. 被拒一次就打死整轮（行为侧）
+
+`11128` 落进 `classifyUpstreamError` 的兜底 `client` 类，而 `client` 不在 `isAccountScoped` 里，于是 `rotation.ts` 直接返回、一次都不重试 —— 可上游自己的 `displayMsg` 写的正是「请重新发送」。
+
+新增失败类 `channel_check`：只认渠道校验的措辞（`unapproved channel` / `channel verification` / `not sent from an official client` / `没通过渠道校验`），**不认单独的 11128**（同码在 CN 是 developer role、国际是缺 system，那两个本仓库在 body 层已修）。该类：
+
+- 换一个全新会话（`WorkBuddyChatChannels.reset`）后**在原账号上重发一次**；第二次仍被拒即终局，不消耗其他账号（换号必然同样被拒）；
+- 不给账号上 bench、不标 session_dead —— 账号和凭证都是好的，把它踢出轮换是错的。
+
+### 5. 截断的 body 让用户看不到真正的原因
+
+`ERROR_BODY_LIMIT` 原为 4096，而这类答复带三语 `displayMsg` + `displayTips` + `requestId`，超长后被截成半截 JSON → `extractDisplayErrorMessage` 解析失败 → 退化成 400 字符裸片段，恰好把「请重新发送」那句切掉了。
+
+- 上限提到 64 KiB；
+- 解析失败时新增窄兜底 `readJsonStringField`：按字段名取**完整闭合**的 JSON 字符串字面量，值被切断就返回 undefined 而不是半句话。
+
+### 验证
+
+`typecheck` / `test`（66 文件 / 881 用例）/ `build` / `test:engine` 全绿。新增回归：渠道类识别（含「11128 本身不算」的反向断言）、截断 body 的取词与「不返回半个值」、id 拼写与 UUIDv7 可排序性、`X-No-*` 缺席、`acp-connection-id` 跨轮稳定、被拒后重发一次且不 bench 不换号。
 ## [0.13.18] — 2026-10-20
 
 ### 请求身份按官方桌面端逐项补齐（只为少被限流，不改行为）

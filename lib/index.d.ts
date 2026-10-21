@@ -260,7 +260,7 @@ declare function probeModel(options: {
 /** WorkBuddy region selected by the credential's login domain. */
 type WorkBuddyRegion = 'cn' | 'global';
 /** Upstream failure classes the shim maps onto distinct HTTP answers. */
-type UpstreamErrorKind = 'hard_credit' | 'soft_rate' | 'session_dead' | 'not_found' | 'server' | 'client';
+type UpstreamErrorKind = 'hard_credit' | 'soft_rate' | 'session_dead' | 'not_found' | 'server' | 'channel_check' | 'client';
 /** One CLI-usable model as the upstream catalog describes it. */
 interface WorkBuddyUpstreamModel {
   id: string;
@@ -442,13 +442,17 @@ declare function originForRegion(region: WorkBuddyRegion): string;
  * Normalize an OpenAI chat-completions body for the WorkBuddy upstream:
  * force `stream: true` (the upstream rejects non-streaming), flatten
  * `tool_choice` (the upstream's field is a string; object forms return 400),
- * and rewrite `developer` messages as `system`.
+ * rewrite `developer` messages as `system`, and replace the harness identity
+ * opener with the one the shipped client writes.
  *
  * The `developer` rewrite is load-bearing: pi-ai emits the system prompt as
  * `role: "developer"` (the OpenAI convention it adopted), but the WorkBuddy
  * upstream rejects that role with HTTP 400 code 11128 ("Illegal API
  * invocation from an unapproved channel"). Rewriting to `system` is the
  * compatible spelling the upstream accepts.
+ *
+ * The opener rewrite is the same class of fix for a newer check; see
+ * {@link normalizeHarnessOpener}.
  */
 declare function prepareChatBody(source: string): string;
 /** Provenance of one successful catalog fetch, surfaced by the status card. */
@@ -506,6 +510,15 @@ declare class WorkBuddyUpstreamClient {
    * would be a claim the upstream can see through.
    */
   private channelFor;
+  /**
+   * Forget the account's conversation after a refusal that names the call.
+   *
+   * A channel-verification refusal says "this invocation did not pass", and the
+   * upstream's own message asks for a resend. Reusing the same conversation and
+   * ACP connection for that resend would present the identical claim that was
+   * just refused; a fresh conversation is the only lever this side has.
+   */
+  private abandonChannel;
   /** POST the chat endpoint; a successful answer is the raw SSE response. */
   chatStream(credential: WorkBuddyCredential, bodyJson: string, signal?: AbortSignal): Promise<WorkBuddyChatResult>;
   /**

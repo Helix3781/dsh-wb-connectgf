@@ -90,6 +90,10 @@ const RATE_LIMIT_CN = '{"code":6004,"msg":"您的使用量已超出频率限制�
 const credit = (): WorkBuddyChatResult => ({ ok: false, status: 402, kind: 'hard_credit', message: 'no credit' })
 const dead = (): WorkBuddyChatResult => ({ ok: false, status: 401, kind: 'session_dead', message: 'session dead' })
 const badRequest = (): WorkBuddyChatResult => ({ ok: false, status: 400, kind: 'client', message: 'bad model' })
+const channelRefused = (): WorkBuddyChatResult => ({
+  ok: false, status: 400, kind: 'channel_check',
+  message: '{"code":11128,"msg":"Illegal API invocation from an unapproved channel"}',
+})
 
 
 /**
@@ -267,6 +271,44 @@ describe('rotation on a limited account', () => {
     expect(seen).toEqual(['uid-a'])
     expect(outcome.result.ok).toBe(false)
     expect(outcome.exhausted).toBeUndefined()
+  })
+
+  it('resends once, on the same account, when the gateway refuses the channel', async () => {
+    const pool = await makePool()
+    add(pool, 'uid-a')
+    add(pool, 'uid-b')
+    // First call refused, the resend accepted: the upstream's own message asks
+    // for exactly this, and no other account is spent honouring it.
+    const { seen, client } = recorder((_uid, attempt) => attempt === 1 ? channelRefused() : ok())
+    const rotation = new WorkBuddyRotation({ pool, client })
+    const outcome = await rotation.send('{}')
+    expect(seen).toEqual(['uid-a', 'uid-a'])
+    expect(outcome.result.ok).toBe(true)
+  })
+
+  it('gives up after one resend when the channel is refused twice', async () => {
+    const pool = await makePool()
+    add(pool, 'uid-a')
+    add(pool, 'uid-b')
+    const { seen, client } = recorder(() => channelRefused())
+    const rotation = new WorkBuddyRotation({ pool, client })
+    const outcome = await rotation.send('{}')
+    // Two attempts on one account, never a rotation: every account would be
+    // refused identically, so rotating would only multiply the refusals.
+    expect(seen).toEqual(['uid-a', 'uid-a'])
+    expect(outcome.result.ok).toBe(false)
+    if (!outcome.result.ok) expect(outcome.result.kind).toBe('channel_check')
+  })
+
+  it('benches nothing for a channel refusal: the account is healthy', async () => {
+    const pool = await makePool()
+    const a = add(pool, 'uid-a')
+    const { client } = recorder(() => channelRefused())
+    const rotation = new WorkBuddyRotation({ pool, client })
+    await rotation.send('{}')
+    const account = pool.list().find(entry => entry.id === a)
+    expect(account?.cooldown).toBeUndefined()
+    expect(account?.sessionDead).toBeUndefined()
   })
 
 
