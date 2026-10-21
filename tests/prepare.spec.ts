@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyUpstreamError, prepareChatBody, prepareInternationalChatBody, regionOf } from '../src/upstream.ts'
+import { classifyUpstreamError, prepareChatBody, prepareCnChatBody, prepareInternationalChatBody, regionOf } from '../src/upstream.ts'
 
 describe('prepareChatBody', () => {
   it('forces stream true', () => {
@@ -225,6 +225,56 @@ describe('regionOf', () => {
   })
 })
 
+describe('prepareCnChatBody effort handling (issue #4)', () => {
+  it('drops the adapter\'s own `off` spelling on the CN wire too', () => {
+    // The CN endpoint refuses `off` on `deepseek-v4.1-flash` with 400 / 11133
+    // (「模型无法处理此请求，请重试」). That row declares `canDisableThinking: true`,
+    // so pi-ai pins `off` for it, and any caller that omits an explicit level
+    // — notably the experimental auto-review — was refused before its body ran.
+    // The strip used to be international-only; this pins the CN side.
+    const body = JSON.parse(prepareCnChatBody(JSON.stringify({
+      model: 'deepseek-v4.1-flash',
+      messages: [{ role: 'user', content: 'hello' }],
+      reasoning_effort: 'off',
+    })))
+    expect('reasoning_effort' in body).toBe(false)
+  })
+
+  it('keeps every declared spelling and an explicit `none` on the CN wire', () => {
+    for (const effort of ['low', 'medium', 'high', 'xhigh', 'max', 'none']) {
+      const body = JSON.parse(prepareCnChatBody(JSON.stringify({
+        messages: [{ role: 'user', content: 'hello' }],
+        reasoning_effort: effort,
+      })))
+      expect(body['reasoning_effort']).toBe(effort)
+    }
+  })
+
+  it('strips `off` on the CN early-return path as well', () => {
+    const body = JSON.parse(prepareCnChatBody(JSON.stringify({ reasoning_effort: 'off' })))
+    expect('reasoning_effort' in body).toBe(false)
+  })
+
+  it('leaves the CN body otherwise untouched: no system prompt is prepended', () => {
+    // The leading-system rule belongs to the international endpoint; the CN
+    // endpoint accepts a body that opens with a user message, and prepending
+    // there would change what the model sees for no reason.
+    const body = JSON.parse(prepareCnChatBody(JSON.stringify({
+      model: 'hy3',
+      messages: [{ role: 'user', content: 'hello' }],
+    })))
+    expect(body['messages']).toEqual([{ role: 'user', content: 'hello' }])
+    expect(body['stream']).toBe(true)
+  })
+
+  it('still applies the shared harness-opener rewrite on the CN wire', () => {
+    const body = JSON.parse(prepareCnChatBody(JSON.stringify({
+      model: 'hy3',
+      messages: [{ role: 'system', content: 'You are an AI agent powered by DeepSeek Harness.' }],
+    })))
+    expect(body['messages'][0].content).toBe('This conversation is powered by WorkBuddy.')
+  })
+})
 describe('prepareInternationalChatBody effort handling (issue #49)', () => {
   it('drops the adapter\'s own `off` spelling on the international wire', () => {
     // pi-ai sends `model.thinkingLevelMap.off` for every request that carries

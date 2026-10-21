@@ -654,8 +654,13 @@ describe('chatStream wire effort by region (issue #49)', () => {
     return calls[0]?.body === undefined ? undefined : (calls[0].body as Record<string, unknown>)['reasoning_effort']
   }
 
-  it('CN keeps the `off` spelling; international drops it', async () => {
-    expect(await wireEffort(CREDENTIAL, 'off')).toBe('off')
+  it('drops the `off` spelling in both regions (CN since issue #4)', async () => {
+    // This used to assert the opposite for CN — "the CN endpoint accepts it" —
+    // on measurements that predated `deepseek-v4.1-flash`. Issue #4 measured
+    // that row refusing `off` with 400 / 11133, and the auto-review path (which
+    // sends no effort of its own) is exactly the shape that lands there, so the
+    // rule is shared now.
+    expect(await wireEffort(CREDENTIAL, 'off')).toBeUndefined()
     expect(await wireEffort(AI_CREDENTIAL, 'off')).toBeUndefined()
   })
 

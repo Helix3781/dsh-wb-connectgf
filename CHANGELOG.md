@@ -2,6 +2,31 @@
 
 版本号即 git tag，遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.13.20] — 2026-10-21
+
+**修 issue #4：CN 端点拒绝 `reasoning_effort: "off"`（400 / 11133）。**
+
+`dropUnsupportedEffort()` 原来只被 `prepareInternationalChatBody()` 调用，CN 分支把 body 原样透传 —— 注释里写着「CN 端点至今接受这个拼写」。issue #4 在 `deepseek-v4.1-flash` 上测出了反面：该行声明 `canDisableThinking: true`，适配器因此把 `thinkingLevelMap.off` 钉成 `"off"`，pi-ai 在任何未指定推理强度的请求上都会发它，CN 端点回 400 / 11133「模型无法处理此请求，请重试」。
+
+最直接的受害者是 `@deepseek-ai/dsh-experimental-auto-review`：审查请求只带 `temperature` 和 provider/model，不带 effort，于是**每个工具调用都被拦在 body 执行之前**。同一会话换到 `glm-5.3-flash`（不钉 `off`）立刻恢复，把问题锁定在「effort 字面量 × 模型 × 区域」的组合上。
+
+### 改动
+
+新增 `prepareCnChatBody()`：共享的 `prepareChatBody()`（含 0.13.19 的 harness 开场句替换）之后再走 `dropUnsupportedEffort()`。`chatStream()` 的 CN 分支改用它。
+
+两个区域现在共享同一条规则。没有采用 issue 建议的「只对拒收的行删字段」：一份 `off` 容忍名单会在新模型上线时过期，而它的失效方式是**某个模型悄悄坏掉**，不是统一省略一个可选字段。
+
+CN 仍然不补 system 首条消息 —— 那是国际端点的要求，CN 接受以 user 消息开头的 body，补上去只会平白改变模型看到的内容。
+
+### 关于 issue 里的另一个建议
+
+issue 提到「CN 上 `reasoning_effort: "none"` 是可接受的，可以映射成 none」。没有采纳：国际侧 `gpt-6-astra` 拒绝 `none`，跨区域统一成「省略」更稳，且省略是唯一在每个模型上都测通的形态。
+
+### 验证
+
+`typecheck` / `test`（66 文件 / 896 用例）/ `build` / `test:engine` 全绿。
+
+新增 5 例 `prepareCnChatBody` 单测（`off` 被删、声明值与非 off 的 `none` 保留、early-return 路径也删、不补 system、仍做开场句替换），2 例出网断言（CN 分支真的不带 `reasoning_effort: off`；显式 `high` 保留且不插 system）。同时把一条旧断言反转：原测试写死「CN 保留 `off`」，那正是本次要修的行为。
 ## [0.13.19] — 2026-10-21
 
 **`0.13.19-alpha.0` + `0.13.19-alpha.1` 合并为正式版，并把风险写进 README。** 两个 alpha 的内容不重复，见下方两条历史条目；本条目只记正式化时新增的部分。

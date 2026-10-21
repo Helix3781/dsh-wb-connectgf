@@ -74,9 +74,44 @@ describe('chatStream identity', () => {
     expect(headers['X-Product']).toBe('SaaS')
     expect(headers['Authorization']).toBe('Bearer at')
     expect(headers['X-Refresh-Token']).toBeUndefined()
-    expect(init.body).toBe(JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }))
+    // The CN branch now normalizes too (issue #4): the same object comes back
+    // with `stream: true` set, which the upstream requires anyway.
+    expect(JSON.parse(init.body as string)).toEqual({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+    })
   })
 
+  it('strips the adapter\'s `off` effort before the CN wire (issue #4)', async () => {
+    // End-to-end rather than unit: the CN branch used to hand the raw body to
+    // fetch, so a unit test on the normalizer would have passed while every
+    // real request still carried the rejected spelling.
+    const wire = captureFetch('{}')
+    await client().chatStream(CN, JSON.stringify({
+      model: 'deepseek-v4.1-flash',
+      messages: [{ role: 'user', content: 'hello' }],
+      reasoning_effort: 'off',
+    }))
+    const body = JSON.parse(wire.last()[1].body as string) as Record<string, unknown>
+    expect('reasoning_effort' in body).toBe(false)
+    expect(body['stream']).toBe(true)
+  })
+
+  it('keeps an explicit CN effort and prepends no system message', async () => {
+    const wire = captureFetch('{}')
+    await client().chatStream(CN, JSON.stringify({
+      model: 'deepseek-v4.1-flash',
+      messages: [{ role: 'user', content: 'hello' }],
+      reasoning_effort: 'high',
+    }))
+    const body = JSON.parse(wire.last()[1].body as string) as {
+      reasoning_effort: string
+      messages: { role: string }[]
+    }
+    expect(body.reasoning_effort).toBe('high')
+    expect(body.messages[0]?.role).toBe('user')
+  })
   it('sends the same product token internationally, and still prepends the first system message', async () => {
     const wire = captureFetch('{}')
     const result = await client().chatStream(GLOBAL, JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }))

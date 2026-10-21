@@ -188,6 +188,7 @@ export {
   normalizeCredits,
   parseModelCatalog,
   prepareChatBody,
+  prepareCnChatBody,
   prepareInternationalChatBody,
   regionOf,
   WorkBuddyUpstreamClient,
