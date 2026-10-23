@@ -1,24 +1,24 @@
 <div align="center">
 
-<img src="icon.svg" width="150" alt="dsh-workbuddy-connect-functy"/>
+<img src="icon.svg" width="150" alt="dsh-wb-connectgf"/>
 
-# dsh-workbuddy-connect-functy
+# dsh-wb-connectgf
 
 **A Functy fork of corrinehu/dsh-workbuddy-connect: dashboard UI, multi-account rotation and credit in the sidebar, bringing WorkBuddy desktop-app models into DeepSeek Harness.**
 
-[![dsh-workbuddy-connect-functy](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.17-4F46E5)](https://github.com/functy23/dsh-workbuddy-connect-functy)
+[![dsh-wb-connectgf](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.17-4F46E5)](https://github.com/Helix3781/dsh-wb-connectgf)
 [![Language](https://img.shields.io/badge/language-TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Top Language](https://img.shields.io/github/languages/top/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/functy23/dsh-workbuddy-connect-functy)
+[![Top Language](https://img.shields.io/github/languages/top/Helix3781/dsh-wb-connectgf)](https://github.com/Helix3781/dsh-wb-connectgf)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/Helix3781/dsh-wb-connectgf)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-[![Downloads](https://img.shields.io/github/downloads/functy23/dsh-workbuddy-connect-functy/total)](https://github.com/functy23/dsh-workbuddy-connect-functy/releases)
-[![Stars](https://img.shields.io/github/stars/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy/stargazers)
-[![Repo Size](https://img.shields.io/github/repo-size/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy)
-[![Contributors](https://img.shields.io/github/contributors/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy/graphs/contributors)
+[![Downloads](https://img.shields.io/github/downloads/Helix3781/dsh-wb-connectgf/total)](https://github.com/Helix3781/dsh-wb-connectgf/releases)
+[![Stars](https://img.shields.io/github/stars/Helix3781/dsh-wb-connectgf)](https://github.com/Helix3781/dsh-wb-connectgf/stargazers)
+[![Repo Size](https://img.shields.io/github/repo-size/Helix3781/dsh-wb-connectgf)](https://github.com/Helix3781/dsh-wb-connectgf)
+[![Contributors](https://img.shields.io/github/contributors/Helix3781/dsh-wb-connectgf)](https://github.com/Helix3781/dsh-wb-connectgf/graphs/contributors)
 
-[Issues](https://github.com/functy23/dsh-workbuddy-connect-functy/issues) • [Changelog](CHANGELOG.md) • [English](README.en.md) / [中文](README.md)
+[Issues](https://github.com/Helix3781/dsh-wb-connectgf/issues) • [Changelog](CHANGELOG.md) • [English](README.en.md) / [中文](README.md)
 
 </div>
 
@@ -38,7 +38,7 @@
 
 ---
 
-This is a fork of [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect), not the upstream project. The upstream npm package is still `dsh-workbuddy-connect` (currently `0.7.8`, DSH `0.2.1-rc.2` only). This repository publishes as **`dsh-workbuddy-connect-functy`**, with a different UI and account model.
+This is a fork of [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect), not the upstream project. The upstream npm package is still `dsh-workbuddy-connect` (currently `0.7.8`, DSH `0.2.1-rc.2` only). This repository publishes as **`dsh-wb-connectgf`**, with a different UI and account model.
 
 Both the CN **WorkBuddy** app and the international **WorkBuddy AI** app are supported: whichever you have installed shows up as its own model group; both installed shows both, each with its own account and credit.
 
@@ -53,7 +53,7 @@ Compared with upstream **0.7.8** (2026-10-17). Features both trees share are not
 | Credit | on the settings card only | in the sidebar, remaining or used/total, can be hidden; each account row also states used, requests, tokens and when the allowance returns |
 | DSH | **`0.2.0-rc.2` only** | **`0.2.1-rc.x` only** (see “Supported DSH versions” below) |
 | Update notice | bottom-right reminder | not ported |
-| npm | `dsh-workbuddy-connect` | `dsh-workbuddy-connect-functy` |
+| npm | `dsh-workbuddy-connect` | `dsh-wb-connectgf` |
 
 Both trees have: CN/AI groups, image input, reasoning-effort detection, per-account model visibility, CN enterprise credit, picker rate/promo badges, Windows Electron discovery, per-region effort-rejection codes.
 
@@ -124,14 +124,19 @@ DSH **Add plugin** accepts a package name (optional version), a Git address, a t
 3. Paste either identifier and confirm:
 
 ```text
-dsh-workbuddy-connect-functy
+dsh-wb-connectgf
 ```
 
 or:
 
 ```text
-github:functy23/dsh-workbuddy-connect-functy
+github:Helix3781/dsh-wb-connectgf
 ```
+
+> **Maintenance source**: this repository is the self-maintained distribution source. The npm name
+> `dsh-wb-connectgf` still resolves to upstream `functy23` (this fork cannot publish the
+> same name), so to get this fix you must install from `github:Helix3781/dsh-wb-connectgf`;
+> installing from npm only gets the upstream release.
 
 4. **Reload the page**; if nothing changed, **restart the DSH client**. The desktop app starts its own profile — do not use `dsh --profile desktop` as a launcher.
 
@@ -142,24 +147,24 @@ Replace `<profile>` with the profile you use (`web` / `desktop`).
 From npm (recommended):
 
 ```sh
-dsh plugin --profile <profile> add dsh-workbuddy-connect-functy
+dsh plugin --profile <profile> add dsh-wb-connectgf
 ```
 
 From GitHub (the repo ships prebuilt `lib/`; git installs do not run `prepack`):
 
 ```sh
-dsh plugin --profile <profile> add github:functy23/dsh-workbuddy-connect-functy
+dsh plugin --profile <profile> add github:Helix3781/dsh-wb-connectgf
 ```
 
 ```sh
 # Web
-dsh plugin --profile web add dsh-workbuddy-connect-functy
+dsh plugin --profile web add dsh-wb-connectgf
 dsh web
 ```
 
 ```sh
 # Desktop (DSH 0.2+ lets the CLI manage the desktop profile)
-dsh plugin --profile desktop add dsh-workbuddy-connect-functy
+dsh plugin --profile desktop add dsh-wb-connectgf
 ```
 
 Before DSH 0.2 the CLI refused the `desktop` profile — use the UI path above. A wrapped desktop app (e.g. DSH NEXT) exposes CLI through its bundled `desktop-cli`, which needs `pnpm` on PATH.

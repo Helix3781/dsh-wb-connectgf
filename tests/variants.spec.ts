@@ -53,8 +53,8 @@ describe('variant descriptors', () => {
     expect(CN_VARIANT.desktopFilename).toBe('workbuddy-desktop.info')
     expect(CN_VARIANT.ownFilename).toBe('.workbuddy-auth.json')
     expect(CN_VARIANT.probeFilename).toBe('.workbuddy-probe.json')
-    expect(CN_VARIANT.statusPath).toBe('/plugins/dsh-workbuddy-connect-functy/status')
-    expect(CN_VARIANT.probePath).toBe('/plugins/dsh-workbuddy-connect-functy/probe')
+    expect(CN_VARIANT.statusPath).toBe('/plugins/dsh-wb-connectgf/status')
+    expect(CN_VARIANT.probePath).toBe('/plugins/dsh-wb-connectgf/probe')
   })
 
   it('gives the AI variant its own files, routes, and env var', () => {
@@ -65,8 +65,8 @@ describe('variant descriptors', () => {
     expect(AI_VARIANT.desktopFilename).toBe('workbuddy-desktop-ai.info')
     expect(AI_VARIANT.ownFilename).toBe('.workbuddy-ai-auth.json')
     expect(AI_VARIANT.probeFilename).toBe('.workbuddy-ai-probe.json')
-    expect(AI_VARIANT.statusPath).toBe('/plugins/dsh-workbuddy-connect-functy/ai/status')
-    expect(AI_VARIANT.probePath).toBe('/plugins/dsh-workbuddy-connect-functy/ai/probe')
+    expect(AI_VARIANT.statusPath).toBe('/plugins/dsh-wb-connectgf/ai/status')
+    expect(AI_VARIANT.probePath).toBe('/plugins/dsh-wb-connectgf/ai/probe')
   })
 
   it('shares no file, route, or env var between the two', () => {
@@ -487,9 +487,13 @@ describe('prepareInternationalChatBody', () => {
   })
 
   it('leaves a body that already starts with system alone', () => {
+    // No extra international prompt is prepended when the body already opens
+    // with a system message; that message keeps its own text, with the official
+    // opening placed in front of it.
+    const OFFICIAL = 'You are CodeBuddy Code.You are an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user. Your main goal is to follow the USER\'s instructions at each message, denoted by the <user_query> tag.'
     const input = JSON.stringify({ messages: [{ role: 'system', content: 'custom' }, { role: 'user', content: 'hi' }] })
     const body = JSON.parse(prepareInternationalChatBody(input))
-    expect(body.messages[0].content).toBe('custom')
+    expect(body.messages[0].content).toBe(`${OFFICIAL}\n\ncustom`)
     expect(body.messages).toHaveLength(2)
   })
 

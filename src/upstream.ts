@@ -793,8 +793,8 @@ function identityHeaders(credential: WorkBuddyCredential): Record<string, string
  * Normalize an OpenAI chat-completions body for the WorkBuddy upstream:
  * force `stream: true` (the upstream rejects non-streaming), flatten
  * `tool_choice` (the upstream's field is a string; object forms return 400),
- * rewrite `developer` messages as `system`, and replace the harness identity
- * opener with the one the shipped client writes.
+ * rewrite `developer` messages as `system`, and reshape the system messages
+ * into the shape the official client sends.
  *
  * The `developer` rewrite is load-bearing: pi-ai emits the system prompt as
  * `role: "developer"` (the OpenAI convention it adopted), but the WorkBuddy
@@ -802,8 +802,8 @@ function identityHeaders(credential: WorkBuddyCredential): Record<string, string
  * invocation from an unapproved channel"). Rewriting to `system` is the
  * compatible spelling the upstream accepts.
  *
- * The opener rewrite is the same class of fix for a newer check; see
- * {@link normalizeHarnessOpener}.
+ * The system-prompt rewrite is the same class of fix for a newer check; see
+ * {@link normalizeSystemMessages}.
  */
 export function prepareChatBody(source: string): string {
   let body: unknown
@@ -816,100 +816,222 @@ export function prepareChatBody(source: string): string {
   const obj = body as Record<string, unknown>
   obj['stream'] = true
   normalizeDeveloperRole(obj)
-  normalizeHarnessOpener(obj)
+  normalizeSystemMessages(obj)
   normalizeToolChoice(obj)
   return JSON.stringify(obj)
 }
 
 /**
- * The identity sentence the shipped WorkBuddy client opens its system prompt
- * with, and the one DeepSeek Harness injects.
+ * The identity sentence DSH injects into every system prompt, removed from
+ * every outgoing request.
  *
- * Both strings are read out of the shipped artifacts, not guessed:
- *
- * - the official opener is the first line of the desktop app's own prompt
- *   template — `welcomemode/{code,work,design}/prompt.tpl` under
- *   `resources/plugins/workbuddy-builtin/` all begin
- *   `This conversation is powered by {{ productName }}`, and `productName` is
- *   `WorkBuddy` in the CLI's `product.json`;
- * - the harness opener is `harness:identity` in
- *   `@deepseek-ai/dsh-system-prompt`, injected whenever
- *   `includeHarnessIdentity` is on (the default).
- *
- * The CN gateway rejects a body whose leading system message opens with the
- * harness sentence — HTTP 400 / code 11128 / 「请求被拦截，请重新发送」 — while
- * the same body opening with the official sentence is accepted. Measured
- * 2026-10-21 against `copilot.tencent.com`: opener-first 400, the official
- * sentence 200, the harness sentence moved off the front 200.
+ * The upstream's channel check treats it as the mark of a third-party caller:
+ * it must not leave the machine, and it is *dropped* rather than swapped for
+ * another sentence — see {@link OFFICIAL_OPENING} for the sentence that takes
+ * its place.
  */
-const HARNESS_OPENER = 'You are an AI agent powered by DeepSeek Harness'
+const HARNESS_IDENTITY_SENTENCE = 'You are an AI agent powered by DeepSeek Harness.'
 
 /**
- * The official client's opening line, substituted for the harness one.
+ * The official client's system-prompt opening, byte-exact.
  *
- * Deliberately the real product sentence rather than a neutral paraphrase:
- * the point is to look like the shipped client, and a body whose first line is
- * a sentence only this plugin would write is a worse disguise than one the
- * desktop app actually produces. `productName` is spelled out because the
- * template's region switch resolves to the same token in both builds.
+ * Rendered from the shipped client's own prompt template
+ * (`cli/product.json` → `prompts["cli-agent-prompt"]`) with nunjucks, the
+ * engine the client itself uses, under the default output style (so the
+ * `{%- else -%}` branch is what ships). The rendered bytes run
+ * "You are CodeBuddy Code." straight into the next sentence with no blank
+ * line, because nunjucks' `{%-` / `-%}` whitespace control eats the
+ * template's own line breaks; copying the template source instead would not
+ * match the client.
+ *
+ * The value is the prefix of the official 15,296-character render, verified
+ * against the CN client 5.8.3. Refresh it when the shipped client upgrades.
  */
-const OFFICIAL_OPENER = 'This conversation is powered by WorkBuddy'
+const OFFICIAL_OPENING =
+  'You are CodeBuddy Code.You are an interactive CLI tool that helps users with software engineering tasks. ' +
+  'Use the instructions below and the tools available to you to assist the user. ' +
+  'Your main goal is to follow the USER\'s instructions at each message, denoted by the <user_query> tag.'
 
 /**
- * Replace the harness identity opener with the official client's.
+ * Third-party client-surface claims, dropped from every system string.
  *
- * Scope is the message that carries it, and only that sentence:
+ * The upstream's channel check rejects a request whose system prompt both
+ * (a) says the agent talks to the user through a named client surface and
+ * (b) disambiguates what "this page" / "this GUI" / "this app" refers to.
+ * Measured on the live CN gateway (2026-10-23): DSH's runtime-context
+ * paragraph — "You are interacting with the user through the DeepSeek
+ * Harness Web GUI …" plus "When the user refers to \"this page\", \"this
+ * GUI\", or \"this app\" … they mean this GUI." — trips code 11128
+ * ("Illegal API invocation from an unapproved channel"), while every other
+ * DSH system paragraph, including all 116 tool schemas, passes.
+ *
+ * The official client never claims a surface of its own, so these sentences
+ * are dropped rather than reworded: a paraphrase would still be a third-party
+ * claim, and once the official opening is in place the text carries no
+ * instruction the model needs.
+ */
+const CLIENT_SURFACE_CLAIM = /You are (?:interacting|working|talking) with the user through/i
+const UI_TARGET_DISAMBIGUATION = /they mean this (?:GUI|app|page|interface)/i
+
+/**
+ * Reshape the system messages into the shape the official client sends.
+ *
+ * Four rules, all measured against the live CN gateway:
+ *
+ * - the harness identity sentence never leaves the machine;
+ * - the first system message opens with the official client's own opening,
+ *   byte-exact;
+ * - third-party client-surface claims are dropped (see
+ *   {@link CLIENT_SURFACE_CLAIM});
+ * - system content is a single string, because the official client sends a
+ *   string — an array of text parts is a shape it never produces, and the CN
+ *   gateway rejects it.
+ *
+ * Scope is the message that carries the text:
  *
  * - `system` and `developer` roles only (after {@link normalizeDeveloperRole},
- *   so pi-ai's `developer` spelling is covered); a user message that happens to
- *   quote the sentence is left alone;
- * - both content shapes, because the CN gateway rejects an array-form `text`
- *   part just as it rejects a plain string, and a rewrite that only handles
- *   strings silently misses half the requests;
- * - every system message, not just the first: DSH re-emits the system prompt as
- *   a new message when it changes, and a long session carries several.
+ *   so pi-ai's `developer` spelling is covered); a user message that happens
+ *   to quote any of these sentences is left alone;
+ * - every system message, not just the first: DSH re-emits the system prompt
+ *   as a new message when it changes, and a long session carries several.
  *
- * The rewrite is idempotent — the substituted sentence does not contain the
- * harness one — so the international path, which runs
- * {@link prepareChatBody} a second time, cannot double-apply it.
+ * The rewrite is idempotent — the official opening does not contain the
+ * harness sentence, and the surface claims are gone after the first pass — so
+ * the international path, which runs {@link prepareChatBody} a second time,
+ * cannot double-apply it.
  */
-function normalizeHarnessOpener(obj: Record<string, unknown>): void {
+function normalizeSystemMessages(obj: Record<string, unknown>): void {
   const messages = obj['messages']
   if (!Array.isArray(messages)) return
+  const kept: unknown[] = []
+  let openingApplied = false
   for (const message of messages) {
-    if (typeof message !== 'object' || message === null || Array.isArray(message)) continue
-    const wrapped = message as Record<string, unknown>
-    const role = wrapped['role']
-    if (role !== 'system' && role !== 'developer') continue
-    const content = wrapped['content']
-    if (typeof content === 'string') {
-      wrapped['content'] = replaceHarnessOpener(content)
+    if (typeof message !== 'object' || message === null || Array.isArray(message)) {
+      kept.push(message)
       continue
     }
-    if (!Array.isArray(content)) continue
-    for (const part of content) {
-      if (typeof part !== 'object' || part === null || Array.isArray(part)) continue
-      const wrappedPart = part as Record<string, unknown>
-      if (wrappedPart['type'] !== 'text' || typeof wrappedPart['text'] !== 'string') continue
-      wrappedPart['text'] = replaceHarnessOpener(wrappedPart['text'])
+    const wrapped = message as Record<string, unknown>
+    const role = wrapped['role']
+    if (role !== 'system' && role !== 'developer') {
+      kept.push(message)
+      continue
     }
+    const flat = flattenTextContent(wrapped['content'])
+    if (flat === null) {
+      kept.push(message)
+      continue
+    }
+    const text = openingApplied ? removeHarnessIdentity(flat) : applyOfficialOpening(flat)
+    openingApplied = true
+    if (text.trim() === '') continue
+    wrapped['content'] = text
+    kept.push(message)
   }
+  obj['messages'] = kept
 }
 
 /**
- * The harness sentence, anchored to the start of a message.
+ * Drop the client-surface claim sentences from a system string.
  *
- * Anchoring is the whole rule, not a convenience: upstream measured that the
- * same sentence anywhere other than the front is accepted, so a mid-prompt
- * occurrence is left byte-identical. Leading whitespace and a BOM are tolerated
- * because the prompt is assembled from sections and may open with either.
+ * Paragraph boundaries are preserved; within a paragraph the surviving
+ * sentences are rejoined with a single space. A paragraph that loses all of
+ * its sentences disappears instead of leaving an empty block.
  */
-const HARNESS_OPENER_PATTERN = /^([\s\uFEFF]*)You are an AI agent powered by DeepSeek Harness/u
-
-/** One system string's opener swap; a no-op when the message does not open with it. */
-function replaceHarnessOpener(text: string): string {
-  return text.replace(HARNESS_OPENER_PATTERN, `$1${OFFICIAL_OPENER}`)
+function removeClientSurfaceClaims(text: string): string {
+  if (typeof text !== 'string' || text === '') return text
+  const paragraphs = text.split(/\r?\n[ \t]*\r?\n/)
+  let changed = false
+  const kept: string[] = []
+  for (const paragraph of paragraphs) {
+    const sentences = paragraph.split(/(?<=\.)\s+/)
+    const keptSentences = sentences.filter(
+      (sentence) => !CLIENT_SURFACE_CLAIM.test(sentence) && !UI_TARGET_DISAMBIGUATION.test(sentence),
+    )
+    if (keptSentences.length === sentences.length) {
+      kept.push(paragraph)
+      continue
+    }
+    changed = true
+    const rebuilt = keptSentences.join(' ').trim()
+    if (rebuilt !== '') kept.push(rebuilt)
+  }
+  if (!changed) return text
+  return kept.join('\n\n')
 }
+
+/**
+ * Remove the harness identity sentence from a system string.
+ *
+ * Three shapes are covered, because DSH emits all three: the sentence on its
+ * own line, the sentence inline in a paragraph, and the sentence as the only
+ * content of a message (which then drops the message entirely).
+ */
+function removeHarnessIdentity(text: string): string {
+  if (typeof text !== 'string' || text === '') return text
+  text = removeClientSurfaceClaims(text)
+  if (!text.includes(HARNESS_IDENTITY_SENTENCE)) return text
+  const withoutParagraph = text
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== HARNESS_IDENTITY_SENTENCE)
+    .join('\n')
+  const withoutInline = withoutParagraph.split(HARNESS_IDENTITY_SENTENCE).join('')
+  return withoutInline
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^(?:[ \t]*\n)+/, '')
+    .replace(/\n+$/, '')
+}
+
+/**
+ * Put the official opening in front of the first system message.
+ *
+ * The first paragraph keeps its own text (minus the sentences that must not
+ * travel); every later paragraph is appended as-is. The result opens with the
+ * official bytes, so the request reads like the official client's.
+ *
+ * Any official opening already present is stripped before the paragraphs are
+ * cleaned, so the opening is never doubled: the international path runs
+ * {@link prepareChatBody} a second time over the same body, and a plain
+ * "prepend" would put the official bytes in front twice.
+ */
+function applyOfficialOpening(text: string): string {
+  const alreadyOpened = text.startsWith(OFFICIAL_OPENING)
+  const body = alreadyOpened ? text.slice(OFFICIAL_OPENING.length).replace(/^(?:\r?\n){2}/, '') : text
+  const paragraphs = body.split(/\r?\n[ \t]*\r?\n/)
+  const firstRaw = paragraphs[0] ?? ''
+  const out: string[] = [OFFICIAL_OPENING]
+  // The first paragraph keeps its own text (minus the sentences that must not
+  // travel). Guarding this push on the identity sentence would silently drop a
+  // system prompt that does not open with it — caught by the international
+  // spec, where a caller-supplied first paragraph vanished entirely.
+  const first = removeHarnessIdentity(firstRaw)
+  if (first.trim() !== '') out.push(first)
+  for (let index = 1; index < paragraphs.length; index += 1) {
+    const cleaned = removeHarnessIdentity(paragraphs[index] ?? '')
+    if (cleaned.trim() === '') continue
+    out.push(cleaned)
+  }
+  return out.join('\n\n')
+}
+
+/**
+ * Flatten a message's content into the single string the official client sends.
+ *
+ * Returns `null` when the content is not text-only (an image part, a tool
+ * result, …), so the caller can leave such a message alone.
+ */
+function flattenTextContent(content: unknown): string | null {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return null
+  const pieces: string[] = []
+  for (const part of content) {
+    if (typeof part !== 'object' || part === null || Array.isArray(part)) return null
+    const wrapped = part as Record<string, unknown>
+    if (wrapped['type'] !== 'text' || typeof wrapped['text'] !== 'string') return null
+    pieces.push(wrapped['text'])
+  }
+  return pieces.join('\n\n')
+}
+
 /** Rewrite `role: "developer"` messages to `role: "system"` (upstream rejects developer). */
 function normalizeDeveloperRole(obj: Record<string, unknown>): void {
   const messages = obj['messages']

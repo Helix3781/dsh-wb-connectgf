@@ -140,7 +140,7 @@ const REFRESH_INTERVAL_MS = 60_000
  * product and replaced wholesale on every successful read; a stale entry is only
  * ever a starting point, never a value that survives a failed read.
  */
-const STATUS_CACHE_PREFIX = 'dsh-workbuddy-connect-functy/status'
+const STATUS_CACHE_PREFIX = 'dsh-wb-connectgf/status'
 
 /** The cache key for one product's document. */
 function statusCacheKey(variantId: string): string {

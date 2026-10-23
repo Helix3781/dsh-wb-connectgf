@@ -1,8 +1,8 @@
 {
-  "name": "dsh-workbuddy-connect-functy",
+  "name": "dsh-wb-connectgf",
   "displayName": "DSH WorkBuddy Connect Functy",
-  "description": "corrinehu/dsh-workbuddy-connect 的 Functy 分支：仪表盘界面、多账号轮换与额度展示，将 WorkBuddy 桌面 App 的模型接入 DeepSeek Harness。",
-  "version": "0.13.20",
+  "description": "corrinehu/dsh-workbuddy-connect 的 Functy 分支（Helix3781 自维护）：仪表盘界面、多账号轮换与额度展示，将 WorkBuddy 桌面 App 的模型接入 DeepSeek Harness，并对齐官方客户端的请求形态以通过上游渠道校验。",
+  "version": "0.13.21",
   "author": "Corrine Hu and Functy",
   "keywords": [
     "dsh-plugin",
@@ -54,10 +54,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/functy23/dsh-workbuddy-connect-functy.git"
+    "url": "git+https://github.com/Helix3781/dsh-wb-connectgf.git"
   },
-  "homepage": "https://github.com/functy23/dsh-workbuddy-connect-functy#readme",
-  "bugs": "https://github.com/functy23/dsh-workbuddy-connect-functy/issues",
+  "homepage": "https://github.com/Helix3781/dsh-wb-connectgf#readme",
+  "bugs": "https://github.com/Helix3781/dsh-wb-connectgf/issues",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

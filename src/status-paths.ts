@@ -27,7 +27,7 @@ export function describeWait(
 }
 
 /** Plugin-owned status endpoint consumed by its browser half. */
-export const WORKBUDDY_STATUS_PATH = '/plugins/dsh-workbuddy-connect-functy/status'
+export const WORKBUDDY_STATUS_PATH = '/plugins/dsh-wb-connectgf/status'
 
 /**
  * Plugin-owned probe control endpoint.
@@ -38,7 +38,7 @@ export const WORKBUDDY_STATUS_PATH = '/plugins/dsh-workbuddy-connect-functy/stat
  * also requires the in-process key the browser half receives with the status
  * document.
  */
-export const WORKBUDDY_PROBE_PATH = '/plugins/dsh-workbuddy-connect-functy/probe'
+export const WORKBUDDY_PROBE_PATH = '/plugins/dsh-wb-connectgf/probe'
 
 /**
  * The international (WorkBuddy AI) variant's own pair of routes.
@@ -48,8 +48,8 @@ export const WORKBUDDY_PROBE_PATH = '/plugins/dsh-workbuddy-connect-functy/probe
  * independently, and a shared expression is one build-config drift away from
  * the desk asking a route the host never mounted.
  */
-export const WORKBUDDY_AI_STATUS_PATH = '/plugins/dsh-workbuddy-connect-functy/ai/status'
-export const WORKBUDDY_AI_PROBE_PATH = '/plugins/dsh-workbuddy-connect-functy/ai/probe'
+export const WORKBUDDY_AI_STATUS_PATH = '/plugins/dsh-wb-connectgf/ai/status'
+export const WORKBUDDY_AI_PROBE_PATH = '/plugins/dsh-wb-connectgf/ai/probe'
 
 /**
  * Account-management routes, one pair per variant.
@@ -59,8 +59,8 @@ export const WORKBUDDY_AI_PROBE_PATH = '/plugins/dsh-workbuddy-connect-functy/ai
  * one must not lose the other. Both are writes and therefore carry the same
  * in-process key as the probe route.
  */
-export const WORKBUDDY_ACCOUNT_PATH = '/plugins/dsh-workbuddy-connect-functy/accounts'
-export const WORKBUDDY_AI_ACCOUNT_PATH = '/plugins/dsh-workbuddy-connect-functy/ai/accounts'
+export const WORKBUDDY_ACCOUNT_PATH = '/plugins/dsh-wb-connectgf/accounts'
+export const WORKBUDDY_AI_ACCOUNT_PATH = '/plugins/dsh-wb-connectgf/ai/accounts'
 
 /**
  * The settings namespace this plugin's profile entry is served under.

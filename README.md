@@ -1,24 +1,24 @@
 <div align="center">
 
-<img src="icon.svg" width="150" alt="dsh-workbuddy-connect-functy"/>
+<img src="icon.svg" width="150" alt="dsh-wb-connectgf"/>
 
-# dsh-workbuddy-connect-functy
+# dsh-wb-connectgf
 
 **corrinehu/dsh-workbuddy-connect 的 Functy 分支：仪表盘界面、多账号轮换与额度展示，把 WorkBuddy 桌面 App 的模型接到 DeepSeek Harness。**
 
-[![dsh-workbuddy-connect-functy](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.17-4F46E5)](https://github.com/functy23/dsh-workbuddy-connect-functy)
+[![dsh-wb-connectgf](https://img.shields.io/badge/dsh--workbuddy--connect--functy-0.13.17-4F46E5)](https://github.com/Helix3781/dsh-wb-connectgf)
 [![Language](https://img.shields.io/badge/language-TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Top Language](https://img.shields.io/github/languages/top/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/functy23/dsh-workbuddy-connect-functy)
+[![Top Language](https://img.shields.io/github/languages/top/Helix3781/dsh-wb-connectgf)](https://github.com/Helix3781/dsh-wb-connectgf)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/Helix3781/dsh-wb-connectgf)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-[![Downloads](https://img.shields.io/github/downloads/functy23/dsh-workbuddy-connect-functy/total)](https://github.com/functy23/dsh-workbuddy-connect-functy/releases)
-[![Stars](https://img.shields.io/github/stars/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy/stargazers)
-[![Repo Size](https://img.shields.io/github/repo-size/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy)
-[![Contributors](https://img.shields.io/github/contributors/functy23/dsh-workbuddy-connect-functy)](https://github.com/functy23/dsh-workbuddy-connect-functy/graphs/contributors)
+[![Downloads](https://img.shields.io/github/downloads/Helix3781/dsh-wb-connectgf/total)](https://github.com/Helix3781/dsh-wb-connectgf/releases)
+[![Stars](https://img.shields.io/github/stars/Helix3781/dsh-wb-connectgf)](https://github.com/Helix3781/dsh-wb-connectgf/stargazers)
+[![Repo Size](https://img.shields.io/github/repo-size/Helix3781/dsh-wb-connectgf)](https://github.com/Helix3781/dsh-wb-connectgf)
+[![Contributors](https://img.shields.io/github/contributors/Helix3781/dsh-wb-connectgf)](https://github.com/Helix3781/dsh-wb-connectgf/graphs/contributors)
 
-[Issues](https://github.com/functy23/dsh-workbuddy-connect-functy/issues) • [Changelog](CHANGELOG.md) • [中文](README.md) / [English](README.en.md)
+[Issues](https://github.com/Helix3781/dsh-wb-connectgf/issues) • [Changelog](CHANGELOG.md) • [中文](README.md) / [English](README.en.md)
 
 </div>
 
@@ -38,7 +38,7 @@
 
 ---
 
-这是 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) 的分支，不是上游本体。上游 npm 包仍叫 `dsh-workbuddy-connect`（当前 `0.7.8`，只认 DSH `0.2.1-rc.2`）。本仓库发在 **`dsh-workbuddy-connect-functy`**，界面和账号模型都走了另一条线。
+这是 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) 的分支，不是上游本体。上游 npm 包仍叫 `dsh-workbuddy-connect`（当前 `0.7.8`，只认 DSH `0.2.1-rc.2`）。本仓库发在 **`dsh-wb-connectgf`**，界面和账号模型都走了另一条线。
 
 国内版 **WorkBuddy** 与国际版 **WorkBuddy AI** 同时支持：装哪个 App 就出现哪个模型分组，两个都装就两组并存，各自用自己的账号与积分。
 
@@ -53,7 +53,7 @@
 | 额度 | 只在设置卡片上 | 侧栏一眼可见，可切「剩余 / 用量」样式，可关掉；设置页每账号显示剩余 / 已用 / 请求数 / token / 恢复时间 |
 | DSH | **只** `0.2.0-rc.2` | **只** `0.2.1-rc.x`（见下方「支持的 DSH 版本」） |
 | 更新提醒 | 右下角更新条 | 无（未移植） |
-| npm | `dsh-workbuddy-connect` | `dsh-workbuddy-connect-functy` |
+| npm | `dsh-workbuddy-connect` | `dsh-wb-connectgf` |
 
 两边都有：国内/国际分组、图片输入、推理档位检测、模型显隐、国内企业额度、选择器里的倍率与促销徽章、Windows Electron 发现、按区域识别 effort 拒绝码。
 
@@ -122,13 +122,13 @@ DSH 的 **添加插件** 对话框接受：npm 包名（可带版本）、Git �
 3. 填下面任一标识，确认：
 
 ```text
-dsh-workbuddy-connect-functy
+dsh-wb-connectgf
 ```
 
 或：
 
 ```text
-github:functy23/dsh-workbuddy-connect-functy
+github:Helix3781/dsh-wb-connectgf
 ```
 
 4. 装完**刷新页面**；没生效就**重启 DSH 客户端**。桌面 App 由它自己拉起 profile，不要用 `dsh --profile desktop` 当启动命令。
@@ -140,24 +140,24 @@ github:functy23/dsh-workbuddy-connect-functy
 从 npm（推荐）：
 
 ```sh
-dsh plugin --profile <profile> add dsh-workbuddy-connect-functy
+dsh plugin --profile <profile> add dsh-wb-connectgf
 ```
 
 从 GitHub（仓库里已有预构建 `lib/`，git 安装不会跑 `prepack`）：
 
 ```sh
-dsh plugin --profile <profile> add github:functy23/dsh-workbuddy-connect-functy
+dsh plugin --profile <profile> add github:Helix3781/dsh-wb-connectgf
 ```
 
 ```sh
 # Web
-dsh plugin --profile web add dsh-workbuddy-connect-functy
+dsh plugin --profile web add dsh-wb-connectgf
 dsh web
 ```
 
 ```sh
 # Desktop（DSH 0.2+ 才让 CLI 管 desktop profile）
-dsh plugin --profile desktop add dsh-workbuddy-connect-functy
+dsh plugin --profile desktop add dsh-wb-connectgf
 ```
 
 DSH 0.2 之前 CLI 不接受 `desktop` profile，请走上面的界面安装。套壳桌面 App（如 DSH NEXT）的 CLI 入口是自带的 `desktop-cli`，它要求 PATH 上有 `pnpm`。

@@ -74,43 +74,48 @@ describe('prepareChatBody', () => {
 })
 
 /**
- * The CN gateway's third-party-client check (issue #201 upstream).
+ * The CN gateway's third-party-client check (upstream issue #201; this fork
+ * extends it).
  *
- * The measured rule: a body whose leading system message opens with the
- * harness identity sentence is refused with 400 / 11128; the same body opening
- * with the sentence the shipped client writes is accepted. These tests pin the
- * rewrite's scope, because an over-broad one would silently edit user prompts.
+ * Two measured rules against the live CN gateway (code 11128, "Illegal API
+ * invocation from an unapproved channel"):
+ *
+ * - the harness identity sentence must never leave the machine — it marks a
+ *   third-party caller;
+ * - the leading system message must open with the bytes the shipped client
+ *   actually writes, not a sentence only this plugin would produce; and a
+ *   client-surface claim ("you talk to the user through <surface>" + "this
+ *   page/GUI/app means X") trips the same check.
+ *
+ * These tests pin the rewrite's scope, because an over-broad one would
+ * silently edit user prompts.
  */
-describe('prepareChatBody harness-opener rewrite', () => {
+describe('prepareChatBody system-prompt rewrite', () => {
   const HARNESS = 'You are an AI agent powered by DeepSeek Harness.'
-  // The sentence as the prompt actually carries it: with the template's full stop.
-  const HARNESS_SENTENCE = HARNESS
-  const OFFICIAL = 'This conversation is powered by WorkBuddy'
+  const OFFICIAL = 'You are CodeBuddy Code.You are an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user. Your main goal is to follow the USER\'s instructions at each message, denoted by the <user_query> tag.'
 
   const messagesOf = (raw: string): { role: string; content: unknown }[] =>
     (JSON.parse(prepareChatBody(raw)) as { messages: { role: string; content: unknown }[] }).messages
 
-  it('replaces the harness identity sentence with the official opener', () => {
+  it('replaces the harness identity sentence with the official opening', () => {
     const messages = messagesOf(JSON.stringify({
       model: 'hy3',
-      messages: [{ role: 'system', content: `${HARNESS_SENTENCE}\n\nYou are a coding agent.` }, { role: 'user', content: 'hi' }],
+      messages: [{ role: 'system', content: `${HARNESS}\n\nYou are a coding agent.` }, { role: 'user', content: 'hi' }],
     }))
-    // Only the identity sentence is swapped; the template's full stop and the
-    // rest of the prompt stay byte-identical.
-    expect(messages[0]?.content).toBe(`${OFFICIAL}.\n\nYou are a coding agent.`)
+    expect(messages[0]?.content).toBe(`${OFFICIAL}\n\nYou are a coding agent.`)
   })
 
   it('tolerates leading whitespace before the sentence', () => {
     const messages = messagesOf(JSON.stringify({
       model: 'hy3',
-      messages: [{ role: 'system', content: `  ${HARNESS_SENTENCE}` }],
+      messages: [{ role: 'system', content: `  ${HARNESS}` }],
     }))
-    expect(messages[0]?.content).toBe(`  ${OFFICIAL}.`)
+    expect(messages[0]?.content).toBe(OFFICIAL)
   })
 
-  it('rewrites an array-form system message too', () => {
-    // A rewrite that only handles string content misses these requests, and the
-    // gateway refuses them exactly the same way.
+  it('flattens an array-form system message to a string', () => {
+    // The official client sends system content as a single string; an array of
+    // text parts is a shape it never produces and the CN gateway rejects.
     const messages = messagesOf(JSON.stringify({
       model: 'hy3',
       messages: [
@@ -118,22 +123,24 @@ describe('prepareChatBody harness-opener rewrite', () => {
         { role: 'user', content: 'hi' },
       ],
     }))
-    expect((messages[0]?.content as { text: string }[])[0]?.text).toBe(`${OFFICIAL}.`)
+    expect(messages[0]?.content).toBe(OFFICIAL)
+    expect(typeof messages[0]?.content).toBe('string')
   })
 
   it('rewrites every system message, not only the first', () => {
     // DSH re-emits the system prompt when it changes, so a long session carries
-    // several; upstream measured that fixing only the first still fails.
+    // several; only the first opens with the official bytes, the rest lose the
+    // identity sentence but keep their own text.
     const messages = messagesOf(JSON.stringify({
       model: 'hy3',
       messages: [
-        { role: 'system', content: HARNESS_SENTENCE },
+        { role: 'system', content: HARNESS },
         { role: 'user', content: 'hi' },
         { role: 'system', content: `${HARNESS} again` },
       ],
     }))
-    expect(messages[0]?.content).toBe(`${OFFICIAL}.`)
-    expect(messages[2]?.content).toBe(`${OFFICIAL}. again`)
+    expect(messages[0]?.content).toBe(OFFICIAL)
+    expect(messages[2]?.content).toBe(' again')
   })
 
   it('leaves a user message that quotes the sentence alone', () => {
@@ -144,26 +151,64 @@ describe('prepareChatBody harness-opener rewrite', () => {
     expect(messages[0]?.content).toBe(`${HARNESS} what does this mean?`)
   })
 
-  it('leaves a system prompt that merely mentions the sentence in the middle alone', () => {
-    // Anchoring is the measured rule: the same sentence anywhere but the front
-    // is accepted by the gateway, so rewriting it would be an unnecessary edit
-    // to a prompt the user wrote.
+  it('removes the harness sentence anywhere in a system message', () => {
+    // Unlike upstream's anchored rule, this fork drops every occurrence: the
+    // sentence is the third-party marker, and the user asked for it to never be
+    // sent. A system re-emission that mentions it mid-prompt must not leak it.
     const messages = messagesOf(JSON.stringify({
       model: 'hy3',
       messages: [{ role: 'system', content: `Custom persona. ${HARNESS}` }],
     }))
-    expect(messages[0]?.content).toBe(`Custom persona. ${HARNESS}`)
+    // The first system message opens with the official bytes, and the harness
+    // sentence is gone from its own paragraph; the persona text is kept.
+    expect(messages[0]?.content).toBe(`${OFFICIAL}\n\nCustom persona. `)
+  })
+
+  it('removes the harness sentence from a later system re-emission', () => {
+    // A long session re-emits the system prompt; only the first message opens
+    // with the official bytes, the rest still drop every occurrence.
+    const messages = messagesOf(JSON.stringify({
+      model: 'hy3',
+      messages: [
+        { role: 'system', content: HARNESS },
+        { role: 'user', content: 'hi' },
+        { role: 'system', content: `Custom persona. ${HARNESS}` },
+      ],
+    }))
+    expect(messages[0]?.content).toBe(OFFICIAL)
+    expect(messages[2]?.content).toBe('Custom persona. ')
   })
 
   it('is idempotent, so the international second pass cannot double-apply', () => {
-    const once = prepareChatBody(JSON.stringify({ model: 'm', messages: [{ role: 'system', content: HARNESS_SENTENCE }] }))
+    const once = prepareChatBody(JSON.stringify({ model: 'm', messages: [{ role: 'system', content: HARNESS }] }))
     const twice = prepareChatBody(once)
-    expect(JSON.parse(twice).messages[0].content).toBe(`${OFFICIAL}.`)
+    expect(JSON.parse(twice).messages[0].content).toBe(OFFICIAL)
   })
 
   it('leaves a body with no system message untouched apart from stream', () => {
     const messages = messagesOf(JSON.stringify({ model: 'm', messages: [{ role: 'user', content: HARNESS }] }))
     expect(messages[0]?.content).toBe(HARNESS)
+    expect(JSON.parse(prepareChatBody(JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] })))['stream']).toBe(true)
+  })
+
+  it('drops the client-surface claim and UI-target disambiguation sentences', () => {
+    // Measured on the live CN gateway (2026-10-23): the two together trip
+    // code 11128; every other paragraph, including all 116 tool schemas, passes.
+    const messages = messagesOf(JSON.stringify({
+      model: 'hy3',
+      messages: [{
+        role: 'system',
+        content: `${HARNESS}\n\n`
+          + 'You are interacting with the user through the DeepSeek Harness Web GUI whose URL the runtime context names.\n'
+          + 'When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI.\n\n'
+          + 'Keep the rest of this paragraph intact.',
+      }, { role: 'user', content: 'hi' }],
+    }))
+    const content = messages[0]?.content as string
+    expect(content.startsWith(OFFICIAL)).toBe(true)
+    expect(content).toContain('Keep the rest of this paragraph intact.')
+    expect(content).not.toContain('interacting with the user through')
+    expect(content).not.toContain('they mean this')
   })
 })
 
@@ -267,12 +312,14 @@ describe('prepareCnChatBody effort handling (issue #4)', () => {
     expect(body['stream']).toBe(true)
   })
 
-  it('still applies the shared harness-opener rewrite on the CN wire', () => {
+  it('still applies the shared system-prompt rewrite on the CN wire', () => {
     const body = JSON.parse(prepareCnChatBody(JSON.stringify({
       model: 'hy3',
       messages: [{ role: 'system', content: 'You are an AI agent powered by DeepSeek Harness.' }],
     })))
-    expect(body['messages'][0].content).toBe('This conversation is powered by WorkBuddy.')
+    expect(body['messages'][0].content).toBe(
+      'You are CodeBuddy Code.You are an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user. Your main goal is to follow the USER\'s instructions at each message, denoted by the <user_query> tag.',
+    )
   })
 })
 describe('prepareInternationalChatBody effort handling (issue #49)', () => {

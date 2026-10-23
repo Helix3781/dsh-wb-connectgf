@@ -1,7 +1,7 @@
 /**
  * Engine-load verification for the installed WorkBuddy plugin.
  *
- * Run this from a profile directory (where `dsh-workbuddy-connect-functy` resolves)
+ * Run this from a profile directory (where `dsh-wb-connectgf` resolves)
  * to answer the question a build-and-test pass cannot: does the HOST actually
  * boot the plugin on this engine, and do the surfaces register?
  *
@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
-import * as WorkBuddy from 'dsh-workbuddy-connect-functy'
+import * as WorkBuddy from 'dsh-wb-connectgf'
 
 /** Minimal settings service exposing only the 0.1.7 face the plugin writes through. */
 class SettingsStub extends Service {

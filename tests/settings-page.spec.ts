@@ -575,7 +575,7 @@ describe('WorkBuddy settings page', () => {
   it('paints the cached documents before the live read answers', async () => {
     // Seed the cache the way a previous visit would have.
     localStorage.setItem(
-      'dsh-workbuddy-connect-functy/status/' + CN_CARD_VARIANT.id,
+      'dsh-wb-connectgf/status/' + CN_CARD_VARIANT.id,
       JSON.stringify({ ...signedIn([account({ name: '缓存账号', credits: 4242 })]), sidebarCreditStyle: 'remaining' }),
     )
     // Every status read hangs: nothing but the cache can paint this page.
@@ -597,14 +597,14 @@ describe('WorkBuddy settings page', () => {
 
   it('lets the live answer replace the cache, and caches that answer in turn', async () => {
     localStorage.setItem(
-      'dsh-workbuddy-connect-functy/status/' + CN_CARD_VARIANT.id,
+      'dsh-wb-connectgf/status/' + CN_CARD_VARIANT.id,
       JSON.stringify(signedIn([account({ name: '缓存账号', credits: 1 })])),
     )
     await mount()
     expect(text()).toContain('主账号')
     expect(text()).not.toContain('缓存账号')
     // The fresh document is what the next visit starts from.
-    const stored = localStorage.getItem('dsh-workbuddy-connect-functy/status/' + CN_CARD_VARIANT.id)
+    const stored = localStorage.getItem('dsh-wb-connectgf/status/' + CN_CARD_VARIANT.id)
     expect(stored).toContain('主账号')
   })
 
@@ -624,7 +624,7 @@ describe('WorkBuddy settings page', () => {
 
   it('keeps the cached document when a read fails outright', async () => {
     localStorage.setItem(
-      'dsh-workbuddy-connect-functy/status/' + CN_CARD_VARIANT.id,
+      'dsh-wb-connectgf/status/' + CN_CARD_VARIANT.id,
       JSON.stringify(signedIn([account({ name: '缓存账号', credits: 4242 })])),
     )
     // Both routes refuse: the page must not blank what it already knew.

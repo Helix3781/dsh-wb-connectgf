@@ -7,4 +7,4 @@
     # settings write from whichever plugin lost the id race. See
     # WORKBUDDY_PROFILE_ENTRY_ID in src/status-paths.ts.
     - id: llm-workbuddy-functy
-      name: dsh-workbuddy-connect-functy
+      name: dsh-wb-connectgf

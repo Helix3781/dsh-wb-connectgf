@@ -224,7 +224,7 @@ export {
  * page rendered raw locale keys and a chat turn could not be sent on a profile
  * carrying both plugins.
  */
-export const name = 'dsh-workbuddy-connect-functy'
+export const name = 'dsh-wb-connectgf'
 
 /** The model registry required before the provider can register. */
 export const inject = ['llm']

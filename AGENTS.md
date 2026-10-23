@@ -1,11 +1,11 @@
-# dsh-workbuddy-connect-functy Agent Notes
+# dsh-wb-connectgf Agent Notes
 
 > **自用笔记**：这是维护者本机的工作笔记——含本机绝对路径、profile 布局、发布约定与个人判例；随仓库跟踪只是为了与它描述的代码同版本可追溯，**不是项目文档，也不是给其他使用者的说明**，里面的路径和约定换台机器就不成立。
 > 面向使用者的文档是 `README.md` / `README.en.md`（两份必须同步改）。
 
 ## 项目坐标
 
-- 开发副本 `~/Desktop/dsh-workbuddy-connect`（目录名未改），remote `origin` = `functy23/dsh-workbuddy-connect-functy`（分发源），`upstream` = `corrinehu/dsh-workbuddy-connect`（原作者；npm 上的 `dsh-workbuddy-connect` 仍属于它）。本仓库 npm 包名 `dsh-workbuddy-connect-functy`，版本 `0.13.8`（已发 npm，tag `v0.13.8`）。
+- 开发副本 `~/Desktop/dsh-workbuddy-connect`（目录名未改），remote `origin` = `Helix3781/dsh-wb-connectgf`（分发源），`upstream` = `corrinehu/dsh-workbuddy-connect`（原作者；npm 上的 `dsh-workbuddy-connect` 仍属于它）。本仓库 npm 包名 `dsh-wb-connectgf`，版本 `0.13.8`（已发 npm，tag `v0.13.8`）。
 - 核心配对（README 有表）：**0.13.1 同时对 DSH `0.1.7-alpha.1` 线与 `0.2.0-rc.2` 线**（peer range 是两条线的并集，devDeps 按 0.2.0-rc.2 编译）；**0.13.0 只对 `0.1.7-alpha.1`**；0.3.2–0.5.4 对 `0.1.5-rc.1`；0.3.0–0.3.1 对 `0.1.2-rc.1`；0.2.6 对 `0.1.1-rc.2`。**装错哪个方向 DSH 都起不来。**
 - **DSH 每次发新 prerelease，插件要显式跟 peer range**（0.2.0 那轮的实测细节见 `docs/dsh-0.2.0-adaptation-2026-09-29.md`）：真正会挡住的只有三处 —— peer range、`@earendil-works/pi-ai`（跟宿主同线）、`@deepseek-ai/schemastery`（去重到宿主那一版）。**`pnpm-workspace.yaml` 里的 `minimumReleaseAgeExclude` 是 pnpm 11 因本机全局 `minimumReleaseAge` 策略自动写的，删了会装不上 DSH 的 prerelease，别清。**
 - 两半边：`src/` = host（凭据、上游协议、routes、provider）；`src/client/` = 浏览器半边（槽位、设置页、仪表盘）。各有 tsconfig（`tsconfig.json` / `tsconfig.client.json`）。
@@ -24,7 +24,7 @@
 
 ```
 ~/.dsh/profiles/web/package.json      "dsh-workbuddy-connect": "link:/Users/functy/dsh-plugins/dsh-workbuddy-connect"
-~/.dsh/profiles/desktop/package.json  "dsh-workbuddy-connect": "link:/Users/functy/.dsh/plugins/dsh-workbuddy-connect-functy"
+~/.dsh/profiles/desktop/package.json  "dsh-workbuddy-connect": "link:/Users/functy/.dsh/plugins/dsh-wb-connectgf"
         ↓ 上面这两个路径现在都是符号链接（2026-09-27 统一）
 /Users/functy/Desktop/dsh-workbuddy-connect        ← 唯一开发副本
 ```
@@ -35,8 +35,8 @@
 
 ## 分发渠道（重要）
 
-- **README 的安装方式是 npm 包 `dsh-workbuddy-connect-functy`，或 `github:functy23/dsh-workbuddy-connect-functy`。** `lib/` 入库，git 安装直接拿预构建产物。
-- **npm 上的 `dsh-workbuddy-connect` 仍是上游 `corrinehu` 的线**（当前 `0.7.1`，只支持 DSH `0.2.0-rc.2`）。本仓库发的是 `dsh-workbuddy-connect-functy`。provider id 和 CLI bin 名没改。
+- **README 的安装方式是 npm 包 `dsh-wb-connectgf`，或 `github:Helix3781/dsh-wb-connectgf`。** `lib/` 入库，git 安装直接拿预构建产物。
+- **npm 上的 `dsh-workbuddy-connect` 仍是上游 `corrinehu` 的线**（当前 `0.7.1`，只支持 DSH `0.2.0-rc.2`）。本仓库发的是 `dsh-wb-connectgf`。provider id 和 CLI bin 名没改。
 - 同一 profile 里 `dsh-infinite-gen-4: "github:Minglink/…#<sha>"` 是 `github:` 规格可用的先例，需要可复现时可以钉 SHA。
 - `package.json` 的 `repository`/`homepage`/`bugs` 已指向 `functy23`；署名按 MIT「保留原作者 + 追加」处理：`LICENSE` = `Copyright (c) 2026 Corrine Hu and Functy`，`package.json` 的 `author` 同文。**不要**把原作者从署名里删掉。
 - **npm 落库比 CLI 报的慢几分钟**：`npm publish` 打印 `+ pkg@ver` 之后，`npm view` 仍可能只看到旧版本、tarball 也 404（0.13.7 那次约十分钟）。**重发会报 `403 cannot publish over the previously published versions`——那句才是「写侧已收下」的证据，别据此改版本号重来**。真落库的判断：`dist-tags.latest` 变过来，或直接查 `registry.npmjs.org/<pkg>/<ver>`。

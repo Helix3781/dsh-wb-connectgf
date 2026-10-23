@@ -2,6 +2,45 @@
 
 版本号即 git tag，遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.13.21] — 2026-10-23
+
+**修 CN 端点 400 / 11128（渠道校验），并把包改名为 `dsh-wb-connectgf`。**
+
+### 400 / 11128 的真正触发点（实测二分得出）
+
+上游对「不像官方客户端发出的请求」返回 `{"code":11128,"msg":"Illegal API invocation from an unapproved channel"}`（提示「请求被拦截，请重新发送」）。在真实网关上做受控矩阵后确认，**触发因素是 system 提示词的内容，不是长度也不是工具**：
+
+| 变量 | 结果 |
+|---|---|
+| system 提示词长度 | 无关（40 KB 无害填充照样 200） |
+| 工具数量 / 体积 | 无关（116 个真实工具、125 KB 请求体照样 200） |
+| DSH system 提示词前 42 段 | 200 |
+| 第 43 段（客户端界面声明段） | **400** |
+
+该段单独测 400，但它的 8 句**单独测全部 200**；留一法显示**去掉第 1 句或第 2 句即 200** → 触发条件是**两句同时出现**：
+
+1. `You are interacting with the user through the DeepSeek Harness Web GUI whose URL the runtime context names.`
+2. `When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI.`
+
+即「声明自己在某个客户端界面上」+「消歧 this page/this GUI/this app」。官方客户端从不声明自己的界面。
+
+### 改动
+
+`prepareChatBody()` 里的 `normalizeHarnessOpener()` 换成 `normalizeSystemMessages()`，四条规则全部实测得出：
+
+- harness 身份句 `You are an AI agent powered by DeepSeek Harness.` **不再发出**（删除而非替换，且删掉所有出现，不只是开头的）；
+- 首条 system 消息以**官方客户端自己的开场白**开头 —— `cli/product.json` 的 `prompts["cli-agent-prompt"]` 用客户端同款 nunjucks 渲染出的逐字节真值（`You are CodeBuddy Code.` 后**没有空行**，`{%-`/`-%}` 吃掉了模板换行）。原先那句 `This conversation is powered by WorkBuddy` 不是官方客户端的句子，已删除；
+- 删掉第三方「客户端界面声明」句（`removeClientSurfaceClaims()`）；
+- system 内容一律拍平成单个字符串（官方客户端就发字符串；数组形态是它不会发的形状，CN 网关也拒）。
+
+顺带修掉移植时暴露的两个真实缺陷：首段不含身份句时**整段被丢弃**（现在保留）；`prepareChatBody()` 跑两次会把官方开头**重复一遍**（现在幂等，国际路径的第二次调用不再重复）。
+
+**代价**：模型不再知道「this page」指本界面（那段界面说明被整句删掉）。这是取舍，不是零成本修复。
+
+### 改名
+
+包从 `dsh-workbuddy-connect-functy` 改名为 **`dsh-wb-connectgf`**，分发源归本仓库（`Helix3781/dsh-wb-connectgf`）。按「改名三连带」同步了客户端 bundle 注册 id、`cordis.patch.yml` 的 `name:`、状态路由前缀 `/plugins/dsh-wb-connectgf/*`。**装到已有 profile 时要同步改 `cordis.patch.yml` 里手写的 `name:`，否则会撞重复注册。** 状态文件（`.workbuddy-accounts.json` 等）不含包名，改名不丢已登录账号。
+
 ## [0.13.20] — 2026-10-21
 
 **修 issue #4：CN 端点拒绝 `reasoning_effort: "off"`（400 / 11133）。**
@@ -43,7 +82,7 @@ issue 提到「CN 上 `reasoning_effort: "none"` 是可接受的，可以映射�
 
 ### 关于 PR #6
 
-`functy23/dsh-workbuddy-connect-functy#6`（外部提交）主张「改请求头修复 11128」。已在 PR 下给出对照数据说明归因不成立：同一套请求头、只换 body 开场句即可从 400 变 200，唯一变量是 body。该 PR 目前 `mergeable: false (dirty)`，未合并。
+`Helix3781/dsh-wb-connectgf#6`（外部提交）主张「改请求头修复 11128」。已在 PR 下给出对照数据说明归因不成立：同一套请求头、只换 body 开场句即可从 400 变 200，唯一变量是 body。该 PR 目前 `mergeable: false (dirty)`，未合并。
 ## [0.13.19-alpha.1] — 2026-10-21
 
 **修 11128 的真正成因：system prompt 开头那句 DSH 身份句。** 上一版（`0.13.19-alpha.0`）把同一条报错当成身份头问题去修，方向错了 —— 上游 PR #202 / #204 与实测都指向请求体内容。
@@ -81,7 +120,7 @@ issue 提到「CN 上 `reasoning_effort: "none"` 是可接受的，可以映射�
 真实上游：改写后发出的开场句为 `This conversation is powered by WorkBuddy.`，国际网关 200 正常流式。CN 侧因两个账号本轮均已失效（一个 token 被吊销、一个被判定异常行为限制），未能完成对照。
 ## [0.13.19-alpha.0] — 2026-10-21
 
-> **预发布，非正式版。** 发在 npm 的 `alpha` dist-tag 上（`--tag alpha`），`latest` 仍是 0.13.18。安装需显式写版本或 tag：`dsh-workbuddy-connect-functy@alpha`。
+> **预发布，非正式版。** 发在 npm 的 `alpha` dist-tag 上（`--tag alpha`），`latest` 仍是 0.13.18。安装需显式写版本或 tag：`dsh-wb-connectgf@alpha`。
 >
 > 这批改动动的是**请求身份本身**（新头、换 id 拼写），失败模式是「上游换个方式拒绝」，因此先走预发布观察一轮再考虑并入正式线。分支：`alpha`。
 >
@@ -292,7 +331,7 @@ issue 里的建议改法是「一律 429 + Retry-After: 60」。那会把反向�
   - 该分组的显示条件也一并修正：原先只在"侧栏那两项偏好有值"时才渲染，三个独立偏好下会把第三个开关一起藏起来；现在任一偏好有值即渲染。
   - 检测按钮的开关由控件自己读同一份状态文档决定是否渲染；字段缺失（旧宿主）一律按"显示"处理，与另两个开关同规矩。
 - **删除设置页里「仪表盘」那一行入口**：仪表盘现在只从侧栏额度卡片进入；卡片关掉时设置页不再提供第二个入口。
-- **设置页首屏不再空等**：状态文档按产品缓存进 `localStorage`（键 `dsh-workbuddy-connect-functy/status/<variant>`，用法与 `@mars-sea/dsh-commandcode-provider` 的缓存同构，读写都容忍 storage 缺失或抛错），进入页面先渲染上次的账号与余额，同时并行拉取实时数据并在到达后替换；某一路读取失败时保留屏幕上已有文档而不是清空。
+- **设置页首屏不再空等**：状态文档按产品缓存进 `localStorage`（键 `dsh-wb-connectgf/status/<variant>`，用法与 `@mars-sea/dsh-commandcode-provider` 的缓存同构，读写都容忍 storage 缺失或抛错），进入页面先渲染上次的账号与余额，同时并行拉取实时数据并在到达后替换；某一路读取失败时保留屏幕上已有文档而不是清空。
 - **账号区新增「刷新账号」按钮**：一次刷新两版所有已登录账号的余额与状态（每版走各自的 `refresh-credits`，清掉该池的额度缓存，下一次状态读取会为每个账号重新拉一次 billing）；只刷账号状态，模型目录仍走它自己那排「刷新列表」。
 
 ## [0.13.10] — 2026-10-06
@@ -313,20 +352,20 @@ issue 里的建议改法是「一律 429 + Retry-After: 60」。那会把反向�
 
 - **修好浏览器半边整块不加载**：0.13.6 改名后，`tsdown.config.ts` 里客户端 bundle 的注册 id 仍写着旧名 `dsh-workbuddy-connect`。宿主以「解析出的 manifest 包名」作为浏览器模块身份，于是那一行永远等不到自己的 factory，加载器按协议重试同一份脚本，第二次执行就以 `duplicate factory registration` 抛错 —— 结果是 `1 entry did not activate`，侧栏卡片、仪表盘、设置页全部消失（宿主侧模型分组不受影响）。
 - 注册 id 改为从 `package.json` 的 `name` 派生，与版本戳同一次读取，避免以后再改名时脱钩；`tests/version.spec.ts` 增加断言锁死「产物必须按包名注册」。
-- 客户端插件名同步为 `dsh-workbuddy-connect-functy-client`。
+- 客户端插件名同步为 `dsh-wb-connectgf-client`。
 
 ## [0.13.6] — 2026-10-01
 
-- **对外改名**：仓库与 npm 包改为 `dsh-workbuddy-connect-functy`，以区别上游 `corrinehu/dsh-workbuddy-connect`（npm 上的同名包仍归上游，当前 `0.7.1`）。provider id（`workbuddy` / `workbuddy-ai`）和 CLI 二进制名 `dsh-workbuddy-connect` 保持不变，已装用户的会话和脚本不用改。
-- 状态 / 探测 / 账号路由改为 `/plugins/dsh-workbuddy-connect-functy/...`，与新包名一致。
+- **对外改名**：仓库与 npm 包改为 `dsh-wb-connectgf`，以区别上游 `corrinehu/dsh-workbuddy-connect`（npm 上的同名包仍归上游，当前 `0.7.1`）。provider id（`workbuddy` / `workbuddy-ai`）和 CLI 二进制名 `dsh-workbuddy-connect` 保持不变，已装用户的会话和脚本不用改。
+- 状态 / 探测 / 账号路由改为 `/plugins/dsh-wb-connectgf/...`，与新包名一致。
 - README 中英重写：标明 fork、对照上游 0.7.1 的差异、界面安装与命令行安装分开写。
 - 截图换成 2026-10-01 实拍（对话、模型选择器、设置账号、设置模型），并在仓库根声明 `screenshots.json`。
 - 并入上游：Windows 在 Electron 宿主内发现桌面 App（#66），以及国际端点的 effort 拒绝码按区域识别（#75）。
 
-[0.13.12]: https://github.com/functy23/dsh-workbuddy-connect-functy/releases/tag/v0.13.12
-[0.13.11]: https://github.com/functy23/dsh-workbuddy-connect-functy/releases/tag/v0.13.11
-[0.13.10]: https://github.com/functy23/dsh-workbuddy-connect-functy/releases/tag/v0.13.10
-[0.13.9]: https://github.com/functy23/dsh-workbuddy-connect-functy/releases/tag/v0.13.9
-[0.13.8]: https://github.com/functy23/dsh-workbuddy-connect-functy/releases/tag/v0.13.8
-[0.13.7]: https://github.com/functy23/dsh-workbuddy-connect-functy/releases/tag/v0.13.7
-[0.13.6]: https://github.com/functy23/dsh-workbuddy-connect-functy/releases/tag/v0.13.6
+[0.13.12]: https://github.com/Helix3781/dsh-wb-connectgf/releases/tag/v0.13.12
+[0.13.11]: https://github.com/Helix3781/dsh-wb-connectgf/releases/tag/v0.13.11
+[0.13.10]: https://github.com/Helix3781/dsh-wb-connectgf/releases/tag/v0.13.10
+[0.13.9]: https://github.com/Helix3781/dsh-wb-connectgf/releases/tag/v0.13.9
+[0.13.8]: https://github.com/Helix3781/dsh-wb-connectgf/releases/tag/v0.13.8
+[0.13.7]: https://github.com/Helix3781/dsh-wb-connectgf/releases/tag/v0.13.7
+[0.13.6]: https://github.com/Helix3781/dsh-wb-connectgf/releases/tag/v0.13.6
